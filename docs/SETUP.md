@@ -30,6 +30,7 @@ Install or obtain:
 - An Oracle database username and password
 - The Google OAuth client ID and client secret
 - Access to the Google OAuth test application if its consent screen is still in testing mode
+- An OCI Generative AI project, API key, region, and supported model ID to use the Oracle AI route
 
 OpenAI credentials are optional for the current login and database dashboard.
 
@@ -89,6 +90,12 @@ AUTH_GOOGLE_SECRET=YOUR_GOOGLE_OAUTH_CLIENT_SECRET
 # Optional until an OpenAI feature is added
 OPENAI_API_KEY=
 OPENAI_MODEL=
+
+# OCI Generative AI chatbot
+OCI_GENAI_API_KEY=YOUR_OCI_GENERATIVE_AI_API_KEY
+OCI_GENAI_REGION=us-chicago-1
+OCI_GENAI_PROJECT_ID=YOUR_GENERATIVE_AI_PROJECT_OCID
+OCI_GENAI_MODEL=YOUR_SUPPORTED_MODEL_ID
 ```
 
 The Oracle database password and wallet password are different:
@@ -115,6 +122,19 @@ For deployment, also add the production callback using the real HTTPS hostname:
 https://YOUR_DOMAIN/api/auth/callback/google
 ```
 
+## Configure OCI Generative AI
+
+The proof-of-concept route uses OCI's OpenAI-compatible Responses API while keeping model execution in OCI.
+
+1. In the OCI Console, open **Generative AI** and create or select a Generative AI project.
+2. Copy the project OCID into `OCI_GENAI_PROJECT_ID`.
+3. Create a Generative AI API key for early development and copy its secret into `OCI_GENAI_API_KEY`.
+4. Choose a supported model in the same region and set its exact model ID in `OCI_GENAI_MODEL`.
+5. Set `OCI_GENAI_REGION` to that OCI region, such as `us-chicago-1`.
+6. Confirm that your OCI user or group can use Generative AI models in the relevant compartment.
+
+API keys are suitable for this POC. For a production application running inside OCI, prefer OCI IAM authentication with an instance or resource principal so the VM does not store a long-lived Generative AI API key.
+
 ## 5. Start and verify
 
 Start the development server:
@@ -138,6 +158,29 @@ The database check should return:
 
 Open [http://localhost:3000/login](http://localhost:3000/login), continue with Google, and confirm that `/dashboard` displays the Oracle database name, schema, service, database time, and available tables.
 
+After signing in, call the Oracle AI route from the browser console:
+
+```js
+const response = await fetch("/api/chat/oracle", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ message: "Explain what an Oracle wallet does." }),
+});
+
+console.log(await response.json());
+```
+
+A successful response has this shape:
+
+```json
+{
+  "provider": "oci-generative-ai",
+  "id": "response-id",
+  "model": "configured-model-id",
+  "text": "Model response"
+}
+```
+
 ## Can teammates copy the same `.env.local`?
 
 Not unchanged. Most shared values can be the same, but every computer has a different wallet path.
@@ -153,6 +196,10 @@ Not unchanged. Most shared values can be the same, but every computer has a diff
 | `AUTH_GOOGLE_ID` | Yes | The OAuth client must allow the localhost callback. |
 | `AUTH_GOOGLE_SECRET` | Yes | Treat it as a secret and never commit it. |
 | `OPENAI_API_KEY` | Avoid sharing personal keys | Use a protected team/project key when OpenAI functionality is enabled. |
+| `OCI_GENAI_API_KEY` | Use a protected team key for the POC | Prefer OCI IAM authentication on the deployed VM. |
+| `OCI_GENAI_REGION` | Yes | It must support the selected model and match the project. |
+| `OCI_GENAI_PROJECT_ID` | Yes | This identifies the shared Generative AI project. |
+| `OCI_GENAI_MODEL` | Yes | Use an exact model ID supported in the selected region. |
 
 The safest teammate workflow is:
 
@@ -216,6 +263,18 @@ Check that:
 
 Another process already owns port 3000. Stop the other development server before testing Google OAuth, because the configured local callback expects port 3000.
 
+### The Oracle AI route returns `401`
+
+Sign in through `/login` first. The POC route rejects requests without a valid Auth.js session.
+
+### The Oracle AI route returns `503`
+
+One or more `OCI_GENAI_*` environment variables is missing. Check the `missing` array in the response and restart the server after editing `.env.local`.
+
+### The Oracle AI route returns `502`
+
+OCI rejected or could not complete the upstream request. Check that the API key is active, the project OCID is correct, the model is supported in the configured region, and the caller has the required IAM permission.
+
 ## Secret handling rules
 
 - Never commit `.env`, `.env.local`, wallet ZIPs, extracted wallet files, private keys, or passwords.
@@ -229,4 +288,5 @@ Another process already owns port 3000. Stop the other development server before
 - [Authentication configuration](../src/auth.ts)
 - [Oracle connection code](../src/lib/db.ts)
 - [Authenticated dashboard](../src/app/dashboard/page.tsx)
+- [Oracle AI chatbot route](../src/app/api/chat/oracle/route.ts)
 - [Project overview](../README.md)

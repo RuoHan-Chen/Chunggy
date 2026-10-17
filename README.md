@@ -12,6 +12,7 @@ Chunggy is a Next.js application foundation for Oracle Database, Google authenti
 - [x] Google login page and authenticated Oracle dashboard
 - [x] Read-only Oracle schema and table overview
 - [x] Lazy, server-only OpenAI SDK client
+- [x] Authenticated OCI Generative AI chatbot route
 - [x] Integration readiness health endpoint
 - [x] Oracle credentials and live connection verification
 - [ ] Google OAuth sign-in verification
@@ -54,6 +55,12 @@ AUTH_GOOGLE_SECRET=
 # OpenAI
 OPENAI_API_KEY=
 # OPENAI_MODEL=
+
+# OCI Generative AI
+OCI_GENAI_API_KEY=
+OCI_GENAI_REGION=us-chicago-1
+OCI_GENAI_PROJECT_ID=
+OCI_GENAI_MODEL=
 ```
 
 For Google OAuth, configure the development callback URL as `http://localhost:3000/api/auth/callback/google`.
@@ -66,6 +73,7 @@ For Google OAuth, configure the development callback URL as `http://localhost:30
 | `GET /api/health/database` | Opens an Oracle connection and runs `SELECT 1 FROM DUAL` | Oracle |
 | `GET/POST /api/auth/*` | Auth.js handlers for Google OAuth | Auth.js and Google |
 | `GET /dashboard` | Authenticated, read-only Oracle schema overview | Auth.js, Google, and Oracle |
+| `POST /api/chat/oracle` | Sends an authenticated prompt to OCI Generative AI | Auth.js and OCI Generative AI |
 
 The OpenAI client is initialized only when it is first used, so missing API keys do not break local builds. The official SDK automatically reads server credentials, and this project keeps all OpenAI access out of browser code.
 

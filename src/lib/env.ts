@@ -36,6 +36,21 @@ export function getOpenAIEnvironment() {
   };
 }
 
+export function getOciGenerativeAiEnvironment() {
+  const env = requireVariables([
+    "OCI_GENAI_API_KEY",
+    "OCI_GENAI_REGION",
+    "OCI_GENAI_PROJECT_ID",
+    "OCI_GENAI_MODEL",
+  ] as const);
+
+  if (!/^[a-z0-9-]+$/.test(env.OCI_GENAI_REGION)) {
+    throw new ConfigurationError(["OCI_GENAI_REGION"]);
+  }
+
+  return env;
+}
+
 export function getIntegrationStatus() {
   const isConfigured = (names: string[]) =>
     names.every((name) => Boolean(process.env[name]?.trim()));
@@ -52,5 +67,11 @@ export function getIntegrationStatus() {
       "AUTH_GOOGLE_SECRET",
     ]),
     openai: isConfigured(["OPENAI_API_KEY"]),
+    oracleAi: isConfigured([
+      "OCI_GENAI_API_KEY",
+      "OCI_GENAI_REGION",
+      "OCI_GENAI_PROJECT_ID",
+      "OCI_GENAI_MODEL",
+    ]),
   };
 }
