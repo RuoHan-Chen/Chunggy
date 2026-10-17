@@ -45,3 +45,63 @@ export async function checkDatabaseConnection() {
     await connection.close();
   }
 }
+
+type DatabaseDetailsRow = {
+  currentUser: string;
+  databaseName: string;
+  serviceName: string;
+  databaseTime: string;
+};
+
+type TableRow = {
+  tableName: string;
+};
+
+export type DatabaseOverview = DatabaseDetailsRow & {
+  tableCount: number;
+  tables: string[];
+};
+
+export async function getDatabaseOverview(): Promise<DatabaseOverview> {
+  const pool = await getPool();
+  const connection = await pool.getConnection();
+
+  try {
+    const details = await connection.execute<DatabaseDetailsRow>(
+      `SELECT
+        SYS_CONTEXT('USERENV', 'CURRENT_USER') AS "currentUser",
+        SYS_CONTEXT('USERENV', 'DB_NAME') AS "databaseName",
+        SYS_CONTEXT('USERENV', 'SERVICE_NAME') AS "serviceName",
+        TO_CHAR(SYSTIMESTAMP, 'YYYY-MM-DD"T"HH24:MI:SS.FF3 TZH:TZM') AS "databaseTime"
+      FROM DUAL`,
+      [],
+      { outFormat: oracledb.OUT_FORMAT_OBJECT },
+    );
+    const tableCount = await connection.execute<{ count: number }>(
+      'SELECT COUNT(*) AS "count" FROM USER_TABLES',
+      [],
+      { outFormat: oracledb.OUT_FORMAT_OBJECT },
+    );
+    const tables = await connection.execute<TableRow>(
+      `SELECT TABLE_NAME AS "tableName"
+       FROM USER_TABLES
+       ORDER BY TABLE_NAME
+       FETCH FIRST 20 ROWS ONLY`,
+      [],
+      { outFormat: oracledb.OUT_FORMAT_OBJECT },
+    );
+
+    const detailsRow = details.rows?.[0];
+    if (!detailsRow) {
+      throw new Error("Oracle did not return database metadata");
+    }
+
+    return {
+      ...detailsRow,
+      tableCount: tableCount.rows?.[0]?.count ?? 0,
+      tables: tables.rows?.map((row) => row.tableName) ?? [],
+    };
+  } finally {
+    await connection.close();
+  }
+}

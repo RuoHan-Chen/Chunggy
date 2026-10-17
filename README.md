@@ -9,10 +9,12 @@ Chunggy is a Next.js application foundation for Oracle Database, Google authenti
 - [x] Oracle connection pool using the default Thin mode
 - [x] Oracle health endpoint running `SELECT 1 FROM DUAL`
 - [x] Auth.js route wiring for Google OAuth
+- [x] Google login page and authenticated Oracle dashboard
+- [x] Read-only Oracle schema and table overview
 - [x] Lazy, server-only OpenAI SDK client
 - [x] Integration readiness health endpoint
-- [ ] Oracle credentials and live connection verification
-- [ ] Google OAuth credentials and sign-in verification
+- [x] Oracle credentials and live connection verification
+- [ ] Google OAuth sign-in verification
 - [ ] OpenAI API key and live request verification
 - [ ] Oracle-backed user and conversation persistence
 - [ ] Authenticated chat endpoint and interface
@@ -28,7 +30,7 @@ cp .env.example .env.local
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000). The application can start without credentials; integrations report as unconfigured until their variables are supplied.
+Open [http://localhost:3000](http://localhost:3000). Sign in with Google to open the protected database dashboard. The dashboard reads Oracle metadata on the server and never exposes database credentials or wallet files to the browser.
 
 ## Environment variables
 
@@ -61,13 +63,14 @@ For Google OAuth, configure the development callback URL as `http://localhost:30
 | `GET /api/health` | Reports which integrations are configured without exposing secrets | No |
 | `GET /api/health/database` | Opens an Oracle connection and runs `SELECT 1 FROM DUAL` | Oracle |
 | `GET/POST /api/auth/*` | Auth.js handlers for Google OAuth | Auth.js and Google |
+| `GET /dashboard` | Authenticated, read-only Oracle schema overview | Auth.js, Google, and Oracle |
 
 The OpenAI client is initialized only when it is first used, so missing API keys do not break local builds. The official SDK automatically reads server credentials, and this project keeps all OpenAI access out of browser code.
 
 ## Next implementation steps
 
-1. Add the supplied credentials and verify both health endpoints.
-2. Complete a Google sign-in and persist the user in Oracle.
+1. Complete a Google sign-in and verify the authenticated dashboard.
+2. Create a least-privilege Oracle application user for deployment.
 3. Add `USERS`, `CONVERSATIONS`, and `MESSAGES` migrations.
 4. Add an authenticated server route using the OpenAI Responses API.
 5. Save and retrieve per-user conversation history.

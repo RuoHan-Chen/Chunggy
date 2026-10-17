@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Chunggy",
-  description: "Oracle, authentication, and OpenAI server foundation",
+  description: "Shared Oracle workspace for the Chunggy team",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
