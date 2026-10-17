@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { signOutUser } from "@/app/auth-actions";
@@ -134,6 +135,9 @@ function DashboardHeader({
         <span>C</span>
         Chunggy
       </div>
+      <nav className={styles.headerNav}>
+        <Link href="/chat">Test chat</Link>
+      </nav>
       <div className={styles.accountArea}>
         <div>
           <strong>{name ?? "Signed-in user"}</strong>
