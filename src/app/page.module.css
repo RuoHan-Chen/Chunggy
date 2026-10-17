@@ -1,0 +1,94 @@
+.page {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 32px;
+  background:
+    radial-gradient(circle at top left, #e9f5ff 0, transparent 36%),
+    #f7f8fa;
+}
+
+.card {
+  width: min(720px, 100%);
+  padding: clamp(32px, 7vw, 64px);
+  border: 1px solid #dfe4ea;
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 24px 80px rgba(20, 38, 63, 0.1);
+}
+
+.eyebrow {
+  margin-bottom: 16px;
+  color: #2f6bff;
+  font-size: 0.78rem;
+  font-weight: 750;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.card h1 {
+  max-width: 560px;
+  color: #152033;
+  font-size: clamp(2.25rem, 6vw, 4.25rem);
+  line-height: 1.02;
+  letter-spacing: -0.055em;
+}
+
+.summary {
+  margin-top: 24px;
+  color: #536176;
+  font-size: 1.05rem;
+  line-height: 1.7;
+}
+
+.statusList {
+  margin-top: 36px;
+  border-top: 1px solid #e6e9ee;
+}
+
+.statusRow {
+  display: flex;
+  gap: 24px;
+  justify-content: space-between;
+  padding: 16px 0;
+  border-bottom: 1px solid #e6e9ee;
+}
+
+.statusRow dt {
+  color: #26344a;
+  font-weight: 650;
+}
+
+.statusRow dd {
+  color: #68758a;
+  text-align: right;
+}
+
+.hint {
+  margin-top: 28px;
+  color: #536176;
+  line-height: 1.6;
+}
+
+.hint code {
+  padding: 3px 7px;
+  border-radius: 6px;
+  color: #234dba;
+  background: #edf3ff;
+}
+
+@media (max-width: 560px) {
+  .page {
+    padding: 16px;
+  }
+
+  .statusRow {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .statusRow dd {
+    text-align: left;
+  }
+}
