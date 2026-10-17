@@ -32,6 +32,8 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000). Sign in with Google to open the protected database dashboard. The dashboard reads Oracle metadata on the server and never exposes database credentials or wallet files to the browser.
 
+For wallet installation, Google OAuth setup, teammate onboarding, verification, troubleshooting, and shared VM deployment, follow the [complete setup guide](docs/SETUP.md).
+
 ## Environment variables
 
 Fill in `.env.local` locally. Never commit it.
