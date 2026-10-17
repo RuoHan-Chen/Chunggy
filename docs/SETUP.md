@@ -10,10 +10,10 @@ Browser
   | Google login + application requests
   v
 Next.js server (local machine or shared VM)
+  |\
+  | \-- Oracle user/password + wallet --> Oracle Autonomous Database
   |
-  | Oracle user/password + wallet
-  v
-Oracle Autonomous Database
+  \---- OCI IAM request signing --------> OCI Generative AI
 ```
 
 The browser never receives the Oracle password, wallet, or Google client secret. Only the Next.js server connects to Oracle.
@@ -30,7 +30,8 @@ Install or obtain:
 - An Oracle database username and password
 - The Google OAuth client ID and client secret
 - Access to the Google OAuth test application if its consent screen is still in testing mode
-- An OCI Generative AI project, API key, region, and supported model ID to use the Oracle AI route
+- An OCI user with an API signing key for local Generative AI calls
+- An OCI compartment OCID, region, and supported on-demand model ID
 
 OpenAI credentials are optional for the current login and database dashboard.
 
@@ -92,10 +93,12 @@ OPENAI_API_KEY=
 OPENAI_MODEL=
 
 # OCI Generative AI chatbot
-OCI_GENAI_API_KEY=YOUR_OCI_GENERATIVE_AI_API_KEY
+OCI_GENAI_AUTH_MODE=config_file
 OCI_GENAI_REGION=us-chicago-1
-OCI_GENAI_PROJECT_ID=YOUR_GENERATIVE_AI_PROJECT_OCID
-OCI_GENAI_MODEL=YOUR_SUPPORTED_MODEL_ID
+OCI_GENAI_COMPARTMENT_ID=YOUR_COMPARTMENT_OCID
+OCI_GENAI_MODEL_ID=meta.llama-3.3-70b-instruct
+# OCI_GENAI_CONFIG_FILE=/absolute/path/to/.oci/config
+# OCI_GENAI_PROFILE=DEFAULT
 ```
 
 The Oracle database password and wallet password are different:
@@ -124,16 +127,29 @@ https://YOUR_DOMAIN/api/auth/callback/google
 
 ## Configure OCI Generative AI
 
-The proof-of-concept route uses OCI's OpenAI-compatible Responses API while keeping model execution in OCI.
+The proof-of-concept route uses the standard OCI Generative AI inference service shown in your Console. It does not require a Generative AI **Project** or `OCI_GENAI_API_KEY`.
 
-1. In the OCI Console, open **Generative AI** and create or select a Generative AI project.
-2. Copy the project OCID into `OCI_GENAI_PROJECT_ID`.
-3. Create a Generative AI API key for early development and copy its secret into `OCI_GENAI_API_KEY`.
-4. Choose a supported model in the same region and set its exact model ID in `OCI_GENAI_MODEL`.
-5. Set `OCI_GENAI_REGION` to that OCI region, such as `us-chicago-1`.
-6. Confirm that your OCI user or group can use Generative AI models in the relevant compartment.
+### Local computer
 
-API keys are suitable for this POC. For a production application running inside OCI, prefer OCI IAM authentication with an instance or resource principal so the VM does not store a long-lived Generative AI API key.
+1. Keep the Console region set to **US Midwest (Chicago)**.
+2. Open your profile menu in the top-right, then **My profile** → **API keys** → **Add API key**.
+3. Select **Generate API key pair**, download the private key, and click **Add**.
+4. Copy Oracle's **Configuration File Preview** into `~/.oci/config`. Ensure its `key_file` points to the downloaded private key using an absolute path. This is an OCI API signing key, not the VM SSH key or database wallet.
+5. Restrict both files:
+
+   ```bash
+   chmod 600 ~/.oci/config /absolute/path/to/oci_api_key.pem
+   ```
+
+6. In the Console, open **Identity & Security** → **Tenancy details** and copy the tenancy OCID. Because the current setup uses the root compartment (`jtafah (root)`), use that tenancy OCID as `OCI_GENAI_COMPARTMENT_ID`.
+7. Open **Generative AI** → **Chat**, choose an on-demand model, and test it in the playground. Use the model ID shown by **View code** as `OCI_GENAI_MODEL_ID`. The template starts with `meta.llama-3.3-70b-instruct`; replace it if the playground offers a different ID.
+8. Ask the tenancy administrator to grant your OCI group permission to use Generative AI if the playground or API returns `NotAuthorizedOrNotFound`.
+
+If the config is at the default `~/.oci/config` path and uses the `DEFAULT` profile, leave `OCI_GENAI_CONFIG_FILE` and `OCI_GENAI_PROFILE` commented out. Each teammate should create their own API signing key instead of sharing the private key.
+
+### OCI VM
+
+Set `OCI_GENAI_AUTH_MODE=instance_principal` on the VM. Add the VM to an OCI dynamic group and grant that dynamic group permission to use Generative AI in the target compartment. The SDK then uses short-lived instance credentials automatically; no OCI user private key or config file belongs on the VM.
 
 ## 5. Start and verify
 
@@ -196,10 +212,12 @@ Not unchanged. Most shared values can be the same, but every computer has a diff
 | `AUTH_GOOGLE_ID` | Yes | The OAuth client must allow the localhost callback. |
 | `AUTH_GOOGLE_SECRET` | Yes | Treat it as a secret and never commit it. |
 | `OPENAI_API_KEY` | Avoid sharing personal keys | Use a protected team/project key when OpenAI functionality is enabled. |
-| `OCI_GENAI_API_KEY` | Use a protected team key for the POC | Prefer OCI IAM authentication on the deployed VM. |
-| `OCI_GENAI_REGION` | Yes | It must support the selected model and match the project. |
-| `OCI_GENAI_PROJECT_ID` | Yes | This identifies the shared Generative AI project. |
-| `OCI_GENAI_MODEL` | Yes | Use an exact model ID supported in the selected region. |
+| `OCI_GENAI_AUTH_MODE` | Yes | Use `config_file` locally and `instance_principal` on the OCI VM. |
+| `OCI_GENAI_REGION` | Yes | It must support the selected model. |
+| `OCI_GENAI_COMPARTMENT_ID` | Yes | The root compartment uses the tenancy OCID; another compartment uses its own OCID. |
+| `OCI_GENAI_MODEL_ID` | Yes | Use an exact on-demand model ID supported in the selected region. |
+| `OCI_GENAI_CONFIG_FILE` | Usually no | Each developer normally uses their own default `~/.oci/config`; omit it on the VM. |
+| `OCI_GENAI_PROFILE` | Usually yes | `DEFAULT` works unless a developer uses a differently named local profile. |
 
 The safest teammate workflow is:
 
@@ -232,6 +250,8 @@ On the VM:
 - Run `npm ci`, `npm run build`, and `npm run start` during deployment.
 - Put an HTTPS reverse proxy or load balancer in front of the Next.js server.
 - Add the VM's public HTTPS callback URL to the Google OAuth client.
+- Set `OCI_GENAI_AUTH_MODE=instance_principal`; do not copy a developer's OCI private key to the VM.
+- Put the VM in a dynamic group and give that group permission to use Generative AI in the chosen compartment.
 
 Teammates who only use the deployed application do not need local wallet files. Teammates running their own local Next.js server still need a local wallet path.
 
@@ -273,7 +293,7 @@ One or more `OCI_GENAI_*` environment variables is missing. Check the `missing` 
 
 ### The Oracle AI route returns `502`
 
-OCI rejected or could not complete the upstream request. Check that the API key is active, the project OCID is correct, the model is supported in the configured region, and the caller has the required IAM permission.
+OCI rejected or could not complete the upstream request. Locally, check `~/.oci/config`, its `key_file`, the API-key fingerprint, compartment OCID, model ID, region, and IAM permission. On the VM, check dynamic-group membership and the instance-principal IAM policy.
 
 ## Secret handling rules
 

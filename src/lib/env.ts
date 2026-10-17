@@ -38,17 +38,26 @@ export function getOpenAIEnvironment() {
 
 export function getOciGenerativeAiEnvironment() {
   const env = requireVariables([
-    "OCI_GENAI_API_KEY",
     "OCI_GENAI_REGION",
-    "OCI_GENAI_PROJECT_ID",
-    "OCI_GENAI_MODEL",
+    "OCI_GENAI_COMPARTMENT_ID",
+    "OCI_GENAI_MODEL_ID",
   ] as const);
+  const authMode = process.env.OCI_GENAI_AUTH_MODE?.trim() || "config_file";
 
   if (!/^[a-z0-9-]+$/.test(env.OCI_GENAI_REGION)) {
     throw new ConfigurationError(["OCI_GENAI_REGION"]);
   }
 
-  return env;
+  if (authMode !== "config_file" && authMode !== "instance_principal") {
+    throw new ConfigurationError(["OCI_GENAI_AUTH_MODE"]);
+  }
+
+  return {
+    ...env,
+    authMode,
+    configFile: process.env.OCI_GENAI_CONFIG_FILE?.trim(),
+    profile: process.env.OCI_GENAI_PROFILE?.trim() || "DEFAULT",
+  };
 }
 
 export function getIntegrationStatus() {
@@ -68,10 +77,9 @@ export function getIntegrationStatus() {
     ]),
     openai: isConfigured(["OPENAI_API_KEY"]),
     oracleAi: isConfigured([
-      "OCI_GENAI_API_KEY",
       "OCI_GENAI_REGION",
-      "OCI_GENAI_PROJECT_ID",
-      "OCI_GENAI_MODEL",
+      "OCI_GENAI_COMPARTMENT_ID",
+      "OCI_GENAI_MODEL_ID",
     ]),
   };
 }

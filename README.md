@@ -57,10 +57,12 @@ OPENAI_API_KEY=
 # OPENAI_MODEL=
 
 # OCI Generative AI
-OCI_GENAI_API_KEY=
+OCI_GENAI_AUTH_MODE=config_file
 OCI_GENAI_REGION=us-chicago-1
-OCI_GENAI_PROJECT_ID=
-OCI_GENAI_MODEL=
+OCI_GENAI_COMPARTMENT_ID=
+OCI_GENAI_MODEL_ID=meta.llama-3.3-70b-instruct
+# OCI_GENAI_CONFIG_FILE=/absolute/path/to/.oci/config
+# OCI_GENAI_PROFILE=DEFAULT
 ```
 
 For Google OAuth, configure the development callback URL as `http://localhost:3000/api/auth/callback/google`.
@@ -77,12 +79,14 @@ For Google OAuth, configure the development callback URL as `http://localhost:30
 
 The OpenAI client is initialized only when it is first used, so missing API keys do not break local builds. The official SDK automatically reads server credentials, and this project keeps all OpenAI access out of browser code.
 
+The OCI route uses Oracle's official SDK with an OCI config-file profile locally and instance-principal authentication on an OCI VM. It does not use a Generative AI Project API key.
+
 ## Next implementation steps
 
 1. Complete a Google sign-in and verify the authenticated dashboard.
 2. Create a least-privilege Oracle application user for deployment.
 3. Add `USERS`, `CONVERSATIONS`, and `MESSAGES` migrations.
-4. Add an authenticated server route using the OpenAI Responses API.
+4. Add a chat interface for the authenticated OCI Generative AI route.
 5. Save and retrieve per-user conversation history.
 
 ## References
