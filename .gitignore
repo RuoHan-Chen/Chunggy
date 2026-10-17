@@ -1,0 +1,21 @@
+# Local environment variables and secrets
+.env
+.env.*
+!.env.example
+
+# Oracle wallets and private keys
+Wallet_*/
+wallet/
+*.pem
+*.p12
+*.sso
+
+# Node / Next.js output
+node_modules/
+.next/
+out/
+
+# Local tooling
+.DS_Store
+*.log
+
