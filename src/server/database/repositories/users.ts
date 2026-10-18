@@ -86,3 +86,29 @@ async function selectByIdentity(
 }
 
 class UserNotFoundError extends Error {}
+
+export async function deleteUserById(userId: string) {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId)) {
+    return false;
+  }
+  return withTransaction(async (connection) => {
+    await connection.execute(
+      `DELETE FROM OUTREACH_ATTEMPTS
+       WHERE REQUEST_ID IN (
+         SELECT REQUEST_ID FROM CARE_REQUESTS WHERE USER_ID = :userId
+       ) OR APPOINTMENT_ID IN (
+         SELECT APPOINTMENT_ID FROM APPOINTMENTS WHERE USER_ID = :userId
+       )`,
+      { userId },
+    );
+    await connection.execute(
+      `DELETE FROM APPOINTMENTS WHERE USER_ID = :userId`,
+      { userId },
+    );
+    const result = await connection.execute(
+      `DELETE FROM APP_USERS WHERE USER_ID = :userId`,
+      { userId },
+    );
+    return (result.rowsAffected ?? 0) > 0;
+  });
+}

@@ -3,7 +3,7 @@ import Link from "next/link";
 import { connection } from "next/server";
 import { redirect } from "next/navigation";
 
-import { signOutUser } from "@/app/auth-actions";
+import { deleteUserByIdAction, signOutUser } from "@/app/auth-actions";
 import { auth } from "@/auth";
 import { getDatabaseOverview } from "@/lib/db";
 import { getIntegrationStatus } from "@/lib/env";
@@ -16,21 +16,32 @@ export const metadata = { title: "Admin" };
 
 export const instant = false;
 
-export default function AdminPage() {
+export default function AdminPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ deleted?: string; deleteError?: string }>;
+}) {
   return (
     <main className={styles.page}>
       <Suspense fallback={<p className={styles.frame}>Loading admin…</p>}>
-        <AdminScreen />
+        <AdminScreen searchParams={searchParams} />
       </Suspense>
     </main>
   );
 }
 
-async function AdminScreen() {
+async function AdminScreen({
+  searchParams,
+}: {
+  searchParams: Promise<{ deleted?: string; deleteError?: string }>;
+}) {
   await connection();
   const session = await auth();
   if (!session?.user) redirect("/login");
 
+  const query = await searchParams;
+  const deleted = query.deleted === "1";
+  const deleteError = query.deleteError === "1";
   const email = session.user.email || "";
   const name = session.user.name || "Assurance member";
   const status = getIntegrationStatus();
@@ -174,6 +185,18 @@ async function AdminScreen() {
         )}
       </section>
 
+      <section className={styles.section}>
+        <h2>Delete user</h2>
+        <p className={styles.lede}>Permanently deletes the account and its cascaded care data. This cannot be undone.</p>
+        <form action={deleteUserByIdAction} className={styles.userDelete}>
+          <label htmlFor="delete-user-id">User ID</label>
+          <input id="delete-user-id" name="userId" placeholder="00000000-0000-0000-0000-000000000000" required />
+          <button className={styles.button} type="submit">Delete user</button>
+        </form>
+      </section>
+
+      {deleted ? <p className={styles.connectionStatus} role="status">User deleted.</p> : null}
+      {deleteError ? <p className={styles.error} role="alert">No user matched that ID.</p> : null}
       <DemoPanel email={email} name={name} />
     </div>
   );

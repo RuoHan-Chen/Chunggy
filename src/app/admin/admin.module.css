@@ -210,6 +210,28 @@
   color: var(--danger);
 }
 
+.userDelete {
+  display: grid;
+  grid-template-columns: minmax(240px, 420px) auto;
+  gap: 10px 12px;
+  align-items: center;
+  margin-top: 14px;
+}
+
+.userDelete label {
+  grid-column: 1 / -1;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.userDelete input {
+  min-width: 0;
+  padding: 9px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  font: inherit;
+}
+
 .connectionStatus {
   display: inline-flex;
   margin: 12px 0 0;
