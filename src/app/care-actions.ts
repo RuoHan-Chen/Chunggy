@@ -7,7 +7,7 @@ import { digits, parseDob, type Appointment, type BookingStep, type CallDraft, t
 import { cancelSavedAppointment, findBookingCallTarget, requestSavedAppointment } from "@/server/database/repositories/appointments";
 import { findCareRequest, saveOfficeOutreach, saveVapiAppointmentOptions, syncCareRequest, updateOfficeOutreach } from "@/server/database/repositories/care-requests";
 import { createVapiDoctorCall, getVapiCall, VapiApiError } from "@/server/vapi/client";
-import { normalizeDoctorCallResult } from "@/server/vapi/doctor-call-result";
+import { summarizeDoctorCallWithAgent } from "@/server/vapi/doctor-call-summary";
 import {
   addConversationContext,
   completeAssistantMessage,
@@ -582,7 +582,7 @@ export async function placeOfficeCallAction(input: {
         });
         return outcome;
       }
-      const doctorResult = normalizeDoctorCallResult(call.structuredOutput);
+      const doctorResult = await summarizeDoctorCallWithAgent(call.structuredOutput, call.transcript);
       const savedTimes = doctorResult
         ? await saveVapiAppointmentOptions({
             userId: user.userId,

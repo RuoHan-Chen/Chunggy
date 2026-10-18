@@ -74,10 +74,11 @@ export function normalizeDoctorCallResult(value: unknown): DoctorCallResult | nu
     data.provides_service === false ? "The office does not provide the requested service." : null,
     data.accepting_new_patients === false ? "The office is not accepting new patients." : null,
   ].filter((item): item is string => Boolean(item));
+  const fee = data.consultation_fee == null ? null : String(data.consultation_fee);
 
   return {
     availableTimes: data.appointment_options.map((label) => ({ label, startIso: null, endIso: null })),
-    estimatedCost: data.consultation_fee == null ? null : `$${data.consultation_fee} consultation fee`,
+    estimatedCost: fee ? `${fee.startsWith("$") ? fee : `$${fee}`} consultation fee` : null,
     insuranceResponse: data.accepts_insurance === undefined
       ? null
       : data.accepts_insurance
