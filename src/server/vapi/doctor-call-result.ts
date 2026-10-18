@@ -24,7 +24,7 @@ const resultSchema = z.object({
 
 const appointmentResultSchema = z.object({
   "call summary": z.string().trim().min(1).max(2_000),
-  appointment_options: z.array(z.string().trim().min(1).max(100)).max(10).default([]),
+  appointment_options: z.array(timeSchema).max(10).default([]),
   consultation_fee: z.union([z.string(), z.number()]).nullable().optional(),
   provides_service: z.boolean().optional(),
   accepts_insurance: z.boolean().optional(),
@@ -32,6 +32,11 @@ const appointmentResultSchema = z.object({
   accepting_new_patients: z.boolean().optional(),
   additional_requirements: z.string().trim().max(500).optional(),
   prior_authorization_required: z.boolean().optional(),
+});
+
+const appointmentResultEnvelopeSchema = z.object({
+  name: z.literal("appointment_result"),
+  result: appointmentResultSchema,
 });
 
 export type DoctorCallResult = {
@@ -62,7 +67,10 @@ export function normalizeDoctorCallResult(value: unknown): DoctorCallResult | nu
     };
   }
 
-  const appointment = appointmentResultSchema.safeParse(value);
+  const envelope = appointmentResultEnvelopeSchema.safeParse(value);
+  const appointment = envelope.success
+    ? { success: true as const, data: envelope.data.result }
+    : appointmentResultSchema.safeParse(value);
   if (!appointment.success) return null;
   const data = appointment.data;
   const requirements = [
@@ -77,7 +85,7 @@ export function normalizeDoctorCallResult(value: unknown): DoctorCallResult | nu
   const fee = data.consultation_fee == null ? null : String(data.consultation_fee);
 
   return {
-    availableTimes: data.appointment_options.map((label) => ({ label, startIso: null, endIso: null })),
+    availableTimes: data.appointment_options,
     estimatedCost: fee ? `${fee.startsWith("$") ? fee : `$${fee}`} consultation fee` : null,
     insuranceResponse: data.accepts_insurance === undefined
       ? null

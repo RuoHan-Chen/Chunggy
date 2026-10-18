@@ -7,6 +7,7 @@ import { digits, parseDob, type Appointment, type BookingStep, type CallDraft, t
 import { cancelSavedAppointment, findBookingCallTarget, requestSavedAppointment } from "@/server/database/repositories/appointments";
 import { findCareRequest, saveOfficeOutreach, saveVapiAppointmentOptions, syncCareRequest, updateOfficeOutreach } from "@/server/database/repositories/care-requests";
 import { createVapiDoctorCall, getVapiCall, VapiApiError } from "@/server/vapi/client";
+import { normalizeDoctorCallResult } from "@/server/vapi/doctor-call-result";
 import { summarizeDoctorCallWithAgent } from "@/server/vapi/doctor-call-summary";
 import {
   addConversationContext,
@@ -380,7 +381,7 @@ export async function deleteConversationAction(conversationId: string): Promise<
 const conversationIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const terminalVapiStatuses = new Set(["ended", "completed", "failed"]);
 
-function fakeDoctorCallResult() {
+function fakeDoctorCallStructuredOutput() {
   const nextWeekday = (weekday: number, hour: number) => {
     const date = new Date();
     date.setUTCDate(date.getUTCDate() + 1);
@@ -397,15 +398,21 @@ function fakeDoctorCallResult() {
     timeZone: "America/Chicago",
   }).format(date);
   return {
-    availableTimes: [
-      { label: label(first), startIso: first.toISOString(), endIso: new Date(first.getTime() + 60 * 60_000).toISOString() },
-      { label: label(second), startIso: second.toISOString(), endIso: new Date(second.getTime() + 60 * 60_000).toISOString() },
-    ],
-    estimatedCost: "$120–$180",
-    insuranceResponse: "Insurance details received; coverage must be verified by the office.",
-    officeRequirements: ["Photo ID", "Insurance card if using insurance", "Arrive 15 minutes early"],
-    summary: "Demo availability was generated without contacting the office.",
-    followUpNotes: "Use a real Vapi call to get the office's actual availability.",
+    name: "appointment_result",
+    result: {
+      "call summary": "Demo availability was generated without contacting the office.",
+      consultation_fee: "$120–$180",
+      provides_service: true,
+      accepts_insurance: true,
+      referral_required: false,
+      appointment_options: [
+        { label: label(first), start: first.toISOString(), end: new Date(first.getTime() + 60 * 60_000).toISOString() },
+        { label: label(second), start: second.toISOString(), end: new Date(second.getTime() + 60 * 60_000).toISOString() },
+      ],
+      accepting_new_patients: true,
+      additional_requirements: "Bring a photo ID and insurance card if using insurance. Arrive 15 minutes early.",
+      prior_authorization_required: false,
+    },
   };
 }
 
@@ -491,7 +498,9 @@ export async function placeOfficeCallAction(input: {
     });
 
     if (input.simulate) {
-      const doctorResult = fakeDoctorCallResult();
+      const structuredOutput = fakeDoctorCallStructuredOutput();
+      const doctorResult = normalizeDoctorCallResult(structuredOutput);
+      if (!doctorResult) return failed("The fake call did not return valid appointment details.", baseDraft);
       const savedTimes = await saveVapiAppointmentOptions({
         userId: user.userId,
         requestId: saved.requestId,
@@ -513,15 +522,15 @@ export async function placeOfficeCallAction(input: {
         `Estimated cost: ${result.estimatedCost}`,
         `Insurance response: ${result.insuranceResponse}`,
         `Office requirements: ${result.officeRequirements.join("; ")}`,
-        `Follow-up: ${result.followUpNotes}`,
-      ], true);
+        result.followUpNotes ? `Follow-up: ${result.followUpNotes}` : null,
+      ].filter((line): line is string => Boolean(line)), true);
       await updateOfficeOutreach({
         userId: user.userId,
         attemptId,
         status: "COMPLETED",
         externalReference: `demo-${attemptId}`,
         summary: "Simulated call completed; office not contacted.",
-        resultJson: JSON.stringify(result),
+        resultJson: JSON.stringify(structuredOutput),
       });
       const refreshedRequest = await findCareRequest(user.userId, saved.requestId);
       return {
@@ -582,7 +591,8 @@ export async function placeOfficeCallAction(input: {
         });
         return outcome;
       }
-      const doctorResult = await summarizeDoctorCallWithAgent(call.structuredOutput, call.transcript);
+      const interpretedCall = await summarizeDoctorCallWithAgent(call.structuredOutput, call.transcript);
+      const doctorResult = interpretedCall?.result ?? null;
       const savedTimes = doctorResult
         ? await saveVapiAppointmentOptions({
             userId: user.userId,
@@ -601,7 +611,7 @@ export async function placeOfficeCallAction(input: {
             savedForFollowUp: false,
           }
         : null;
-      const structuredSummary = result ? JSON.stringify(result) : null;
+      const structuredSummary = interpretedCall ? JSON.stringify(interpretedCall.structuredOutput) : null;
       const transcript = call.transcript?.trim();
       const lines = result ? [
         `Summary: ${result.summary}`,

@@ -3,14 +3,19 @@ import { normalizeDoctorCallResult, type DoctorCallResult } from "@/server/vapi/
 
 type GenerateResponse = (prompt: string) => Promise<{ text: string }>;
 
+export type InterpretedDoctorCall = {
+  structuredOutput: unknown;
+  result: DoctorCallResult;
+};
+
 export async function summarizeDoctorCallWithAgent(
   structuredOutput: unknown,
   transcript: string | null,
   generate: GenerateResponse = createOracleAiResponse,
-): Promise<DoctorCallResult | null> {
+): Promise<InterpretedDoctorCall | null> {
   const fallback = normalizeDoctorCallResult(structuredOutput);
   const source = JSON.stringify(structuredOutput)?.slice(0, 8_000) || transcript?.slice(-4_000);
-  if (!source) return fallback;
+  if (!source) return fallback ? { structuredOutput, result: fallback } : null;
 
   const prompt = [
     "Convert this doctor-office call result into concise appointment data.",
@@ -19,7 +24,7 @@ export async function summarizeDoctorCallWithAgent(
     "Resolve weekday-only appointment options to their next future occurrence in America/Chicago.",
     `Current time: ${new Date().toISOString()}.`,
     "Return only one JSON object with this exact shape:",
-    '{"summary":"string","available_times":[{"label":"string","start":"ISO-8601 string","end":"ISO-8601 string or empty"}],"estimated_cost":"string or null","insurance_response":"string or null","office_requirements":["string"],"follow_up_notes":"string or null"}',
+    '{"name":"appointment_result","result":{"call summary":"string","consultation_fee":"number or null","provides_service":"boolean","accepts_insurance":"boolean","referral_required":"boolean","appointment_options":[{"label":"string","start":"ISO-8601 string","end":"ISO-8601 string or empty"}],"accepting_new_patients":"boolean","additional_requirements":"string","prior_authorization_required":"boolean"}}',
     `Call result:\n${source}`,
     transcript ? `Transcript:\n${transcript.slice(-4_000)}` : "",
   ].filter(Boolean).join("\n\n");
@@ -27,9 +32,12 @@ export async function summarizeDoctorCallWithAgent(
   try {
     const response = await generate(prompt);
     const parsed = parseJsonObject(response.text);
-    return normalizeDoctorCallResult(parsed) ?? fallback;
+    const result = normalizeDoctorCallResult(parsed);
+    return result
+      ? { structuredOutput: parsed, result }
+      : fallback ? { structuredOutput, result: fallback } : null;
   } catch {
-    return fallback;
+    return fallback ? { structuredOutput, result: fallback } : null;
   }
 }
 
