@@ -25,6 +25,7 @@ import {
   type CareSnapshot,
   type ChatContextItem,
   type ChatMessage,
+  type ChatProvider,
   type ChatSession,
   type Notice,
   type Preferences,
@@ -42,11 +43,12 @@ type CareContextValue = {
   chatSessions: ChatSession[]; activeChatId: string; activeChat: ChatSession;
   createChat: () => void; switchChat: (id: string) => void;
   renameChat: (id: string, title: string) => void; deleteChat: (id: string) => void;
+  setChatProvider: (provider: ChatProvider) => void;
   importAppointmentContext: () => void; importChatContext: (id: string) => void;
   updateProfile: (patch: Partial<Profile>) => void; updatePreferences: (patch: Partial<Preferences>) => void;
   deferOnboarding: () => Promise<CareSaveResult>; completeOnboarding: () => Promise<CareSaveResult>;
   saveProfile: () => Promise<CareSaveResult>; saveInsurance: () => Promise<CareSaveResult>;
-  sendMessage: (text: string) => void; selectSlot: (slot: Slot) => void;
+  sendMessage: (text: string) => Promise<void>; selectSlot: (slot: Slot) => void;
   bookDraft: (shareSms: boolean) => void; cancelAppointment: () => void;
   markNoticesRead: () => void; requestCoverage: () => void;
   clearInsurance: () => Promise<CareSaveResult>;
@@ -66,6 +68,38 @@ function summarizeChat(session: ChatSession) {
   return summary || "This conversation does not have any messages yet.";
 }
 
+function appointmentContext(appointment: Appointment): ChatContextItem {
+  return {
+    id: `appointment-${appointment.reference}`,
+    kind: "appointment",
+    title: `${appointment.visitType} appointment`,
+    body: `${appointment.provider} · ${appointment.longDate} at ${appointment.timeLabel} · ${appointment.status}`,
+  };
+}
+
+type ChatApiResponse = {
+  error?: string;
+  message?: string;
+  text?: string;
+  model?: string;
+};
+
+function providerEndpoint(provider: ChatProvider) {
+  return provider === "openai" ? "/api/chat/openai" : "/api/chat/oracle";
+}
+
+function providerLabel(provider: ChatProvider) {
+  return provider === "openai" ? "GPT" : "OCI Generative AI";
+}
+
+function describeChatError(status: number, payload: ChatApiResponse, provider: ChatProvider) {
+  if (payload.message) return payload.message;
+  if (status === 401 || payload.error === "unauthorized") return "Your session expired. Sign in again and retry.";
+  if (payload.error === "not_configured") return `${providerLabel(provider)} is not configured on this server.`;
+  if (status === 502 || payload.error === "upstream_error") return `${providerLabel(provider)} rejected the request. Try again.`;
+  return "The assistant could not complete that request. Try again.";
+}
+
 export function CareProvider({ user, initialData, children }: { user: CareUser; initialData: CareBootstrap; children: ReactNode }) {
   const router = useRouter();
   const [snapshot, setSnapshot] = useState(initialData.snapshot);
@@ -77,8 +111,11 @@ export function CareProvider({ user, initialData, children }: { user: CareUser; 
 
   const value = useMemo<CareContextValue>(() => {
     const commit = (recipe: (current: CareSnapshot) => CareSnapshot) => setSnapshot(recipe);
+    const updateChat = (id: string, recipe: (current: ChatSession) => ChatSession) => {
+      setChatSessions((current) => current.map((session) => session.id === id ? recipe(session) : session));
+    };
     const updateActiveChat = (recipe: (current: ChatSession) => ChatSession) => {
-      setChatSessions((current) => current.map((session) => session.id === activeChat.id ? recipe(session) : session));
+      updateChat(activeChat.id, recipe);
     };
     const sessionOnly = (message: string): CareSaveResult => ({ ok: true, persisted: false, message: `${message} Saved for this session only because Oracle is disconnected.` });
     async function persistProfile(status: "NOT_STARTED" | "DEFERRED" | "COMPLETE") {
@@ -100,6 +137,10 @@ export function CareProvider({ user, initialData, children }: { user: CareUser; 
         setActiveChatId(session.id);
       },
       switchChat: setActiveChatId,
+      setChatProvider(provider) {
+        if (activeChat.pending) return;
+        updateActiveChat((session) => ({ ...session, provider, error: null }));
+      },
       renameChat(id, title) {
         const trimmed = title.trim();
         if (!trimmed) return;
@@ -118,13 +159,7 @@ export function CareProvider({ user, initialData, children }: { user: CareUser; 
       },
       importAppointmentContext() {
         if (!snapshot.appointment) return;
-        const appointment = snapshot.appointment;
-        const item: ChatContextItem = {
-          id: `appointment-${appointment.reference}`,
-          kind: "appointment",
-          title: `${appointment.visitType} appointment`,
-          body: `${appointment.provider} · ${appointment.longDate} at ${appointment.timeLabel} · ${appointment.status}`,
-        };
+        const item = appointmentContext(snapshot.appointment);
         updateActiveChat((session) => session.context.some((context) => context.id === item.id)
           ? session
           : { ...session, context: [...session.context, item], updatedAt: new Date().toISOString() });
@@ -186,25 +221,97 @@ export function CareProvider({ user, initialData, children }: { user: CareUser; 
           return result;
         } finally { setSaving(false); }
       },
-      sendMessage(text) {
+      async sendMessage(text) {
         const trimmed = text.trim();
-        if (!trimmed) return;
+        if (!trimmed || activeChat.pending) return;
         const time = clock();
         const turn = bookingTurn(trimmed, activeChat.bookingStep, activeChat.preferences, snapshot.profile);
         const stamp = Date.now();
-        updateActiveChat((session) => ({
+        const sessionId = activeChat.id;
+        const userMessage: ChatMessage = { id: `user-${stamp}`, role: "user", text: trimmed, time };
+        const guidedBooking = activeChat.bookingStep !== "idle" || turn.step !== "idle";
+
+        if (guidedBooking) {
+          updateChat(sessionId, (session) => ({
+            ...session,
+            title: session.title === "New chat" ? chatTitleFromMessage(trimmed) : session.title,
+            bookingStep: turn.step,
+            preferences: turn.preferences,
+            error: null,
+            updatedAt: new Date().toISOString(),
+            messages: [
+              ...session.messages,
+              userMessage,
+              { id: `assistant-${stamp}`, role: "assistant", text: turn.reply, time },
+            ],
+          }));
+          commit((current) => ({ ...current, profile: { ...current.profile, zip: turn.zip, payment: turn.payment } }));
+          return;
+        }
+
+        const provider = activeChat.provider;
+        const implicitAppointment = snapshot.appointment && trimmed.toLowerCase().includes("appointment context")
+          ? appointmentContext(snapshot.appointment)
+          : null;
+        const requestContext = implicitAppointment && !activeChat.context.some((item) => item.id === implicitAppointment.id)
+          ? [...activeChat.context, implicitAppointment]
+          : activeChat.context;
+        const history = activeChat.messages.slice(-12).map((message) => ({
+          role: message.role,
+          text: message.text.slice(0, 2_000),
+        }));
+        const context = requestContext.slice(0, 6).map((item) => ({
+          kind: item.kind,
+          title: item.title,
+          body: item.body.slice(0, 2_000),
+        }));
+
+        updateChat(sessionId, (session) => ({
           ...session,
           title: session.title === "New chat" ? chatTitleFromMessage(trimmed) : session.title,
-          bookingStep: turn.step,
-          preferences: turn.preferences,
+          pending: true,
+          error: null,
+          context: requestContext,
           updatedAt: new Date().toISOString(),
-          messages: [
-            ...session.messages,
-            { id: `user-${stamp}`, role: "user", text: trimmed, time },
-            { id: `assistant-${stamp}`, role: "assistant", text: turn.reply, time },
-          ],
+          messages: [...session.messages, userMessage],
         }));
-        commit((current) => ({ ...current, profile: { ...current.profile, zip: turn.zip, payment: turn.payment } }));
+
+        try {
+          const response = await fetch(providerEndpoint(provider), {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ message: trimmed, history, context }),
+          });
+          const payload = (await response.json()) as ChatApiResponse;
+          if (!response.ok || !payload.text) {
+            updateChat(sessionId, (session) => ({
+              ...session,
+              pending: false,
+              error: describeChatError(response.status, payload, provider),
+            }));
+            return;
+          }
+          updateChat(sessionId, (session) => ({
+            ...session,
+            pending: false,
+            error: null,
+            updatedAt: new Date().toISOString(),
+            messages: [...session.messages, {
+              id: `assistant-${Date.now()}`,
+              role: "assistant",
+              text: payload.text ?? "",
+              time: clock(),
+              provider,
+              model: payload.model,
+            }],
+          }));
+        } catch {
+          updateChat(sessionId, (session) => ({
+            ...session,
+            pending: false,
+            error: "The assistant could not be reached. Check your connection and try again.",
+          }));
+        }
       },
       selectSlot: (slot) => commit((current) => ({ ...current, draft: slot })),
       bookDraft(shareSms) {
