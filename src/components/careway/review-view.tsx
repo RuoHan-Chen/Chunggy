@@ -26,7 +26,7 @@ export function ReviewView() {
       return;
     }
     if (!share) {
-      setError("Allow Chunggy to share these details with the office.");
+      setError("Allow Assurance to share these details with the office.");
       return;
     }
     care.bookDraft(sms);
@@ -142,7 +142,7 @@ export function ReviewView() {
                 type="checkbox"
               />
               <span>
-                I authorize Chunggy to share these details with this office to request this appointment.
+                I authorize Assurance to share these details with this office to request this appointment.
                 <small>
                   This includes your name, phone number, contact information, appointment details, and
                   insurance or payment information (if applicable).

@@ -3,9 +3,13 @@
 import { useRouter } from "next/navigation";
 import {
   createContext,
+  useCallback,
   useContext,
+  useEffect,
   useMemo,
+  useRef,
   useState,
+  useSyncExternalStore,
   type ReactNode,
 } from "react";
 
@@ -32,6 +36,7 @@ import {
   type Profile,
   type Slot,
 } from "@/lib/careway/model";
+import { emptyPreview, readPreview, subscribePreview, writePreview } from "@/lib/careway/preview";
 
 export type CareUser = { name: string; email: string; image: string | null };
 
@@ -102,15 +107,48 @@ function describeChatError(status: number, payload: ChatApiResponse, provider: C
 
 export function CareProvider({ user, initialData, children }: { user: CareUser; initialData: CareBootstrap; children: ReactNode }) {
   const router = useRouter();
-  const [snapshot, setSnapshot] = useState(initialData.snapshot);
+  const [sessionSnapshot, setSessionSnapshot] = useState(initialData.snapshot);
   const [policyId, setPolicyId] = useState(initialData.insurancePolicyId);
   const [saving, setSaving] = useState(false);
   const [chatSessions, setChatSessions] = useState<ChatSession[]>(() => [chatFromSnapshot(initialData.snapshot)]);
   const [activeChatId, setActiveChatId] = useState("chat-initial");
   const activeChat = chatSessions.find((session) => session.id === activeChatId) ?? chatSessions[0];
+  const subscribe = useCallback(
+    (onChange: () => void) => subscribePreview(user.email, onChange),
+    [user.email],
+  );
+  const readStoredPreview = useCallback(() => readPreview(user.email), [user.email]);
+  const preview = useSyncExternalStore(subscribe, readStoredPreview, emptyPreview);
+  const snapshot = preview ?? sessionSnapshot;
+  const previewChatKey = preview
+    ? `${preview.bookingStep}|${preview.preferences.visitType}|${preview.preferences.location}|${preview.preferences.preferredTimes}|${preview.preferences.paymentLabel}|${preview.messages.map((message) => message.id).join(",")}`
+    : "";
+  const appliedPreviewKey = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!preview) {
+      if (!appliedPreviewKey.current) return;
+      appliedPreviewKey.current = null;
+      setChatSessions([chatFromSnapshot(initialData.snapshot)]);
+      setActiveChatId("chat-initial");
+      return;
+    }
+    if (appliedPreviewKey.current === previewChatKey) return;
+    appliedPreviewKey.current = previewChatKey;
+    const seeded = chatFromSnapshot(preview);
+    setChatSessions((current) => [seeded, ...current.filter((session) => session.id !== seeded.id)]);
+    setActiveChatId(seeded.id);
+  }, [initialData.snapshot, preview, previewChatKey]);
 
   const value = useMemo<CareContextValue>(() => {
-    const commit = (recipe: (current: CareSnapshot) => CareSnapshot) => setSnapshot(recipe);
+    const commit = (recipe: (current: CareSnapshot) => CareSnapshot) => {
+      const stored = readPreview(user.email);
+      if (stored) {
+        writePreview(user.email, recipe(stored));
+        return;
+      }
+      setSessionSnapshot(recipe);
+    };
     const updateChat = (id: string, recipe: (current: ChatSession) => ChatSession) => {
       setChatSessions((current) => current.map((session) => session.id === id ? recipe(session) : session));
     };

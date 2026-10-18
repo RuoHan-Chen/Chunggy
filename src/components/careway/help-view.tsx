@@ -6,7 +6,7 @@ import styles from "@/components/careway/careway.module.css";
 
 const faqs = [
   {
-    q: "Does Chunggy call the office for me?",
+    q: "Does Assurance call the office for me?",
     a: "Only after you review the visit and allow sharing. This preview keeps that choice on the review screen and does not place a call.",
   },
   {

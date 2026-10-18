@@ -391,7 +391,7 @@ export function ProfileView({ initialTab = "Insurance" }: { initialTab?: Tab }) 
           <h2>Privacy</h2>
           <p className={styles.cardLede}>
             {care.dataMode === "database"
-              ? "Chunggy stores your profile and manually entered insurance details in Oracle. Google handles sign-in, and a visit request still needs your permission on the review screen."
+              ? "Assurance stores your profile and manually entered insurance details in Oracle. Google handles sign-in, and a visit request still needs your permission on the review screen."
               : "Oracle is disconnected, so this development session uses temporary example data. Your changes disappear when the page reloads."}
           </p>
           <ul className={styles.plainList}>

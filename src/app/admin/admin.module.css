@@ -1,0 +1,172 @@
+.page {
+  min-height: 100vh;
+  padding: 28px 20px 64px;
+  background: var(--background);
+  color: var(--ink);
+}
+
+.frame {
+  width: min(1100px, 100%);
+  margin: 0 auto;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 22px;
+}
+
+.wordmark {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+}
+
+.account {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.account strong {
+  display: block;
+  color: var(--ink);
+}
+
+.links,
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.section {
+  margin-top: 18px;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: white;
+}
+
+.section h1,
+.section h2 {
+  margin: 0;
+  letter-spacing: -0.03em;
+}
+
+.lede {
+  margin: 8px 0 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.metrics,
+.statusList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 16px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.metrics li,
+.statusList li {
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #f7fafc;
+  font-size: 14px;
+}
+
+.tableBlock {
+  margin-top: 18px;
+}
+
+.tableBlock h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.tableBlock p {
+  margin: 4px 0 8px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.scroll {
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.table th,
+.table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.table th {
+  background: #f7fafc;
+  color: var(--muted);
+  font-weight: 650;
+}
+
+.empty {
+  padding: 14px;
+  color: var(--muted);
+}
+
+.button,
+.textLink {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: white;
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.primary {
+  border-color: transparent;
+  background: var(--blue);
+  color: white;
+}
+
+.facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 14px 0;
+  padding: 0;
+  list-style: none;
+}
+
+.facts li {
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: #f7fafc;
+}
+
+.error {
+  margin-top: 12px;
+  color: var(--danger);
+}

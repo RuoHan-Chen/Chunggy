@@ -1,6 +1,6 @@
-# Chunggy
+# Assurance
 
-Chunggy is a Next.js care-navigation application using Oracle Database, Google authentication, OpenAI, and OCI Generative AI. It includes an Oracle-backed patient profile, guided appointment discovery, and temporary AI conversations.
+Assurance is a Next.js care-navigation application using Oracle Database, Google authentication, OpenAI, and OCI Generative AI. It includes an Oracle-backed patient profile, guided appointment discovery, temporary AI conversations, and a browser-only admin preview.
 
 ## Current implementation
 

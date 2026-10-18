@@ -27,7 +27,7 @@ function LoginScreen({ error }: { error?: string }) {
       <section className={styles.hero}>
         <div className={styles.wordmark}>
           <LeafMark />
-          Chunggy
+          Assurance
         </div>
         <h1>
           Less calling.
@@ -75,7 +75,7 @@ function LoginScreen({ error }: { error?: string }) {
           <LanguageMenu />
         </div>
         <div className={styles.panelInner}>
-          <h1>Welcome to Chunggy</h1>
+          <h1>Welcome to Assurance</h1>
           <p className={styles.panelLead}>Find and book care with a little help.</p>
           {error ? (
             <p className={styles.authError}>Google sign-in didn’t complete. Try again in a moment.</p>
@@ -89,7 +89,7 @@ function LoginScreen({ error }: { error?: string }) {
             </button>
           </form>
           <p className={styles.accountNote}>
-            New to Chunggy? Continuing with Google creates your account.
+            New to Assurance? Continuing with Google creates your account.
           </p>
         </div>
       </section>
@@ -118,7 +118,7 @@ export default function LoginPage({
     <Suspense
       fallback={
         <div className={styles.loadingPlain}>
-          <p>Loading Chunggy…</p>
+          <p>Loading Assurance…</p>
         </div>
       }
     >
