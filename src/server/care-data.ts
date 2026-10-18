@@ -16,6 +16,7 @@ import {
 } from "@/lib/careway/model";
 import { listInsurancePolicies } from "@/server/database/repositories/insurance";
 import { findPatientProfile } from "@/server/database/repositories/profiles";
+import { findOpenCareRequest } from "@/server/database/repositories/care-requests";
 import { listProviderServices } from "@/server/database/repositories/providers";
 import { upsertAuthenticatedUser } from "@/server/database/repositories/users";
 
@@ -71,7 +72,7 @@ export async function loadCareBootstrap(session: Session): Promise<CareBootstrap
   const name = session.user?.name || "Assurance member";
   try {
     const user = await resolveDatabaseUser(session);
-    const [record, policies, providerGroups] = await Promise.all([
+    const [record, policies, providerGroups, savedCareRequest] = await Promise.all([
       findPatientProfile(user.userId),
       listInsurancePolicies(user.userId),
       Promise.all(
@@ -79,6 +80,10 @@ export async function loadCareBootstrap(session: Session): Promise<CareBootstrap
           listProviderServices({ appointmentType, minimumRating: 0, limit: 20 }),
         ),
       ),
+      findOpenCareRequest(user.userId).catch((error: { errorNum?: number }) => {
+        if (error?.errorNum === 942) return null;
+        throw error;
+      }),
     ]);
     const policy = policies.find((candidate) => candidate.active) ?? policies[0] ?? null;
     const snapshot = databaseSnapshot(name);
@@ -113,6 +118,7 @@ export async function loadCareBootstrap(session: Session): Promise<CareBootstrap
       snapshot,
       insurancePolicyId: policy?.policyId ?? null,
       providerSlots: slotsFromProviders(providerGroups.flat()),
+      savedCareRequest,
       message: null,
     };
   } catch (error) {
@@ -122,6 +128,7 @@ export async function loadCareBootstrap(session: Session): Promise<CareBootstrap
       snapshot: defaultSnapshot(name),
       insurancePolicyId: null,
       providerSlots: slotsFor("dental", "Flexible"),
+      savedCareRequest: null,
       message: "Development data — database disconnected. Changes last only for this browser session.",
     };
   }

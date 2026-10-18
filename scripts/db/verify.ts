@@ -5,7 +5,10 @@ loadEnvConfig(process.cwd());
 
 const expectedTables = [
   "APP_USERS",
+  "APPOINTMENT_OPTIONS",
   "APPOINTMENT_TYPES",
+  "CARE_REQUESTS",
+  "CARE_REQUEST_CODES",
   "INSURANCE_POLICIES",
   "PATIENT_PROFILES",
   "PROVIDER_LOCATIONS",
@@ -44,14 +47,14 @@ async function main() {
       (table) => !verification.tables.includes(table),
     );
     if (missingTables.length > 0) {
-      throw new Error(`Missing Phase 0 tables: ${missingTables.join(", ")}`);
+      throw new Error(`Missing tables: ${missingTables.join(", ")}`);
     }
     if (verification.providerCount < 1) {
       throw new Error("No active provider seed data found");
     }
 
     console.log(
-      `Phase 0 database verified: ${verification.tables.length} tables, ${verification.providerCount} active providers.`,
+      `Database verified: ${verification.tables.length} tables, ${verification.providerCount} active providers.`,
     );
   } catch (error) {
     console.error(error instanceof Error ? error.message : "Database verification failed");

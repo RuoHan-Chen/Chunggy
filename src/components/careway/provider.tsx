@@ -12,7 +12,7 @@ import {
   type ReactNode,
 } from "react";
 
-import { removeInsuranceAction, saveInsuranceAction, saveProfileAction } from "@/app/care-actions";
+import { removeInsuranceAction, saveInsuranceAction, saveProfileAction, syncCareRequestAction } from "@/app/care-actions";
 import styles from "@/components/careway/careway.module.css";
 import {
   bookingTurn,
@@ -33,6 +33,7 @@ import {
   type Notice,
   type Preferences,
   type Profile,
+  type SavedCareRequest,
   type Slot,
 } from "@/lib/careway/model";
 import { emptyPreview, readPreview, subscribePreview, writePreview } from "@/lib/careway/preview";
@@ -43,12 +44,13 @@ type CareContextValue = {
   ready: boolean; user: CareUser; dataMode: CareBootstrap["mode"]; dataMessage: string | null;
   saving: boolean; profile: Profile; preferences: Preferences; messages: ChatMessage[];
   bookingStep: CareSnapshot["bookingStep"]; draft: Slot | null; appointment: Appointment | null;
-  notices: Notice[]; providerSlots: Slot[]; retryDatabase: () => void;
+  notices: Notice[]; providerSlots: Slot[]; savedCareRequest: SavedCareRequest | null; retryDatabase: () => void;
   chatSessions: ChatSession[]; activeChatId: string; activeChat: ChatSession;
   createChat: () => void; switchChat: (id: string) => void;
   renameChat: (id: string, title: string) => void; deleteChat: (id: string) => void;
   setChatProvider: (provider: ChatProvider) => void;
   importAppointmentContext: () => void; importChatContext: (id: string) => void;
+  importSavedRequest: () => void; prepareCareRequest: () => Promise<CareSaveResult>;
   updateProfile: (patch: Partial<Profile>) => void; updatePreferences: (patch: Partial<Preferences>) => void;
   deferOnboarding: () => Promise<CareSaveResult>; completeOnboarding: () => Promise<CareSaveResult>;
   saveProfile: () => Promise<CareSaveResult>; saveInsurance: () => Promise<CareSaveResult>;
@@ -108,6 +110,7 @@ export function CareProvider({ user, initialData, children }: { user: CareUser; 
   const router = useRouter();
   const [sessionSnapshot, setSessionSnapshot] = useState(initialData.snapshot);
   const [policyId, setPolicyId] = useState(initialData.insurancePolicyId);
+  const [savedCareRequest, setSavedCareRequest] = useState(initialData.savedCareRequest);
   const [saving, setSaving] = useState(false);
   const [chatSessions, setChatSessions] = useState<ChatSession[]>(() => [chatFromSnapshot(initialData.snapshot)]);
   const [activeChatId, setActiveChatId] = useState("chat-initial");
@@ -157,6 +160,7 @@ export function CareProvider({ user, initialData, children }: { user: CareUser; 
       profile: snapshot.profile, preferences: activeChat.preferences, messages: activeChat.messages,
       bookingStep: activeChat.bookingStep, draft: snapshot.draft,
       appointment: snapshot.appointment, notices: snapshot.notices, providerSlots: initialData.providerSlots,
+      savedCareRequest,
       chatSessions, activeChatId: activeChat.id, activeChat,
       retryDatabase: () => router.refresh(),
       createChat() {
@@ -191,6 +195,44 @@ export function CareProvider({ user, initialData, children }: { user: CareUser; 
         updateActiveChat((session) => session.context.some((context) => context.id === item.id)
           ? session
           : { ...session, context: [...session.context, item], updatedAt: new Date().toISOString() });
+      },
+      importSavedRequest() {
+        if (!savedCareRequest) return;
+        const optionSummary = savedCareRequest.options
+          .map((option) => `${option.provider} ${option.dateLabel} ${option.timeLabel}`)
+          .join("; ");
+        const item: ChatContextItem = {
+          id: `care-request-${savedCareRequest.requestId}`,
+          kind: "care_request",
+          title: `${savedCareRequest.visitType} request`,
+          body: [
+            savedCareRequest.postalCode ? `Near ${savedCareRequest.postalCode} within ${savedCareRequest.radiusMiles} miles` : "Location not set",
+            savedCareRequest.timePreference,
+            savedCareRequest.paymentPreference,
+            optionSummary ? `Options: ${optionSummary}` : "No matching options",
+          ].filter(Boolean).join(" · "),
+        };
+        updateActiveChat((session) => session.context.some((context) => context.id === item.id)
+          ? session
+          : { ...session, context: [...session.context, item], updatedAt: new Date().toISOString() });
+      },
+      async prepareCareRequest() {
+        if (initialData.mode === "fallback") return sessionOnly("Search kept in this session.");
+        setSaving(true);
+        try {
+          const result = await syncCareRequestAction({
+            requestId: savedCareRequest?.requestId,
+            visitType: activeChat.preferences.visitType,
+            postalCode: snapshot.profile.zip,
+            timePreference: activeChat.preferences.preferredTimes,
+            paymentPreference: snapshot.profile.payment,
+            radiusMiles: 5,
+          });
+          if (result.saved) setSavedCareRequest(result.saved);
+          return result;
+        } finally {
+          setSaving(false);
+        }
       },
       importChatContext(id) {
         const source = chatSessions.find((session) => session.id === id);
@@ -358,7 +400,7 @@ export function CareProvider({ user, initialData, children }: { user: CareUser; 
         return result;
       },
     };
-  }, [activeChat, chatSessions, initialData, policyId, router, saving, snapshot, user]);
+  }, [activeChat, chatSessions, initialData, policyId, router, savedCareRequest, saving, snapshot, user]);
 
   return <CareContext.Provider value={value}>
     {initialData.mode === "fallback" ? <div className={styles.dataBanner} role="status"><span>{initialData.message}</span><button onClick={() => router.refresh()} type="button">Retry database</button></div> : null}

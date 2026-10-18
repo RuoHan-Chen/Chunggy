@@ -118,7 +118,7 @@ function getMessage(body: unknown) {
 }
 
 type HistoryItem = { role: "user" | "assistant"; text: string };
-type ContextItem = { kind: "appointment" | "conversation"; title: string; body: string };
+type ContextItem = { kind: "appointment" | "conversation" | "care_request"; title: string; body: string };
 
 function getHistory(body: unknown): HistoryItem[] | undefined {
   if (!body || typeof body !== "object" || !("history" in body)) return [];
@@ -147,7 +147,7 @@ function getContext(body: unknown): ContextItem[] | undefined {
     if (!item || typeof item !== "object") return undefined;
     const { kind, title, body: contextBody } = item as Record<string, unknown>;
     if (
-      (kind !== "appointment" && kind !== "conversation") ||
+      (kind !== "appointment" && kind !== "conversation" && kind !== "care_request") ||
       typeof title !== "string" ||
       typeof contextBody !== "string"
     ) return undefined;

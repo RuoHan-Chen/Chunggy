@@ -20,6 +20,7 @@ export function AssistantView() {
   const router = useRouter();
   const [draft, setDraft] = useState("");
   const [attachment, setAttachment] = useState("");
+  const [searchError, setSearchError] = useState("");
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
   const transcriptRef = useRef<HTMLDivElement>(null);
@@ -146,11 +147,16 @@ export function AssistantView() {
                   OCI GenAI
                 </button>
               </div>
-              {care.appointment ? (
-                <button className={styles.contextButton} onClick={care.importAppointmentContext} type="button">
-                  + Appointment context
-                </button>
-              ) : null}
+            {care.appointment ? (
+              <button className={styles.contextButton} onClick={care.importAppointmentContext} type="button">
+                + Appointment context
+              </button>
+            ) : null}
+            {care.savedCareRequest ? (
+              <button className={styles.contextButton} onClick={care.importSavedRequest} type="button">
+                Import saved request
+              </button>
+            ) : null}
             </div>
           </div>
 
@@ -158,7 +164,7 @@ export function AssistantView() {
             <div className={styles.contextBar} aria-label="Imported context">
               {care.activeChat.context.map((item) => (
                 <div className={styles.contextChip} key={item.id} title={item.body}>
-                  <span>{item.kind === "appointment" ? "Appointment" : "Conversation"}</span>
+                  <span>{item.kind === "appointment" ? "Appointment" : item.kind === "care_request" ? "Care request" : "Conversation"}</span>
                   <strong>{item.title}</strong>
                   <small>{item.body}</small>
                 </div>
@@ -214,7 +220,23 @@ export function AssistantView() {
             ) : null}
             {care.bookingStep === "ready" ? (
               <div className={styles.chips}>
-                <button className={styles.btnPrimary} onClick={() => router.push("/appointments/results")} type="button">Find options</button>
+                <button
+                  className={styles.btnPrimary}
+                  disabled={care.saving}
+                  onClick={async () => {
+                    setSearchError("");
+                    const result = await care.prepareCareRequest();
+                    if (!result.ok) {
+                      setSearchError(result.message);
+                      return;
+                    }
+                    router.push("/appointments/results");
+                  }}
+                  type="button"
+                >
+                  {care.saving ? "Saving options…" : "Find options"}
+                </button>
+                {searchError ? <p className={styles.formError}>{searchError}</p> : null}
               </div>
             ) : null}
           </div>

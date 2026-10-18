@@ -1,7 +1,8 @@
 "use server";
 
 import { auth } from "@/auth";
-import { digits, parseDob, type CareSaveResult, type Profile } from "@/lib/careway/model";
+import { digits, parseDob, type CareSaveResult, type Profile, type SavedCareRequest } from "@/lib/careway/model";
+import { syncCareRequest } from "@/server/database/repositories/care-requests";
 import { deleteInsurancePolicies, saveInsurancePolicy } from "@/server/database/repositories/insurance";
 import { savePatientProfile } from "@/server/database/repositories/profiles";
 import { resolveDatabaseUser } from "@/server/care-data";
@@ -61,6 +62,47 @@ export async function saveInsuranceAction(
   } catch (error) {
     console.error("Insurance save failed", error);
     return { ok: false, persisted: false, message: error instanceof Error ? error.message : "Insurance could not be saved." };
+  }
+}
+
+export async function syncCareRequestAction(input: {
+  requestId?: string;
+  visitType: string;
+  postalCode: string;
+  timePreference: string;
+  paymentPreference: Profile["payment"];
+  radiusMiles?: number;
+}): Promise<CareSaveResult & { saved: SavedCareRequest | null }> {
+  try {
+    const user = await authenticatedUser();
+    if (!/^\d{5}$/.test(input.postalCode)) {
+      return { ok: false, persisted: false, saved: null, message: "Enter a 5-digit ZIP before searching." };
+    }
+    const saved = await syncCareRequest({
+      userId: user.userId,
+      requestId: input.requestId,
+      visitType: input.visitType,
+      postalCode: input.postalCode,
+      radiusMiles: input.radiusMiles ?? 5,
+      timePreference: input.timePreference,
+      paymentPreference: input.paymentPreference.toUpperCase() as "INSURANCE" | "SELF" | "LATER",
+    });
+    return {
+      ok: true,
+      persisted: true,
+      saved,
+      message: saved.options.length > 0
+        ? `Saved ${saved.options.length} options to Oracle.`
+        : "Saved the request. No providers matched these filters.",
+    };
+  } catch (error) {
+    console.error("Care request save failed", error);
+    return {
+      ok: false,
+      persisted: false,
+      saved: null,
+      message: error instanceof Error ? error.message : "The care request could not be saved.",
+    };
   }
 }
 

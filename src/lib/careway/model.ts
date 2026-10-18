@@ -66,9 +66,20 @@ export type ChatProvider = "openai" | "oci";
 
 export type ChatContextItem = {
   id: string;
-  kind: "appointment" | "conversation";
+  kind: "appointment" | "conversation" | "care_request";
   title: string;
   body: string;
+};
+
+export type SavedCareRequest = {
+  requestId: string;
+  visitType: string;
+  postalCode: string | null;
+  radiusMiles: number;
+  timePreference: string | null;
+  paymentPreference: "INSURANCE" | "SELF" | "LATER" | null;
+  status: string;
+  options: Slot[];
 };
 
 export type ChatSession = {
@@ -112,6 +123,7 @@ export type CareBootstrap = {
   snapshot: CareSnapshot;
   insurancePolicyId: string | null;
   providerSlots: Slot[];
+  savedCareRequest: SavedCareRequest | null;
   message: string | null;
 };
 
