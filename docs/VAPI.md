@@ -33,6 +33,12 @@ The endpoint validates the event envelope, ignores unrelated event types, fetche
 
 For local webhook testing, expose port 3000 through a tunnel such as ngrok, then configure the tunnel URL in Vapi. Vapi's CLI listener can also forward deliveries to the local endpoint; see [Vapi local webhook testing](https://docs.vapi.ai/cli/webhook).
 
+## Outbound appointment call
+
+The authenticated `POST /api/vapi/call` endpoint starts a call using `VAPI_APPOINTMENT_ASSISTANT_ID` and `VAPI_PHONE_NUMBER_ID`. For the MVP it always calls `VAPI_TEST_DESTINATION_NUMBER`, which is configured on the server and never accepted from the browser. The **Start Appointment Call** button appears on an appointment confirmation page, prevents repeat clicks, and shows the returned Vapi call ID and status. Clicking it places a real call to the configured test destination.
+
+Set `VAPI_PRIVATE_API_KEY`, `VAPI_APPOINTMENT_ASSISTANT_ID`, `VAPI_PHONE_NUMBER_ID`, and `VAPI_TEST_DESTINATION_NUMBER` in `.env.local`, restart the dev server, and sign in. Confirm an appointment request, then use **Start Appointment Call** on the confirmation page. The Vapi request uses the documented `assistantId`, `phoneNumberId`, and `customer.number` fields ([Outbound Calling](https://docs.vapi.ai/calls/outbound-calling)).
+
 ## Oracle and UI connection
 
 The current Oracle schema has user profiles and insurance policies but no care-request workflow or Vapi-call-to-request mapping. The webhook therefore does not write an unassociated call or infer a patient from webhook data. Once a trusted call-to-care-request mapping is added to the existing workflow, persist the normalized findings idempotently through the current Oracle repository layer and expose them only to the authorized request owner. The existing insurance screen has no call reference to query, so it is not connected to synthetic test results.
