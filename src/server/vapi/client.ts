@@ -162,3 +162,70 @@ export async function getVapiCall(callId: string): Promise<VapiCallResult> {
     diagnostic,
   };
 }
+
+export async function startVapiAppointmentCall(): Promise<{ callId: string; status: string }> {
+  const apiKey = process.env.VAPI_PRIVATE_API_KEY?.trim();
+  const assistantId = process.env.VAPI_APPOINTMENT_ASSISTANT_ID?.trim();
+  const phoneNumberId = process.env.VAPI_PHONE_NUMBER_ID?.trim();
+  const destinationNumber = process.env.VAPI_TEST_DESTINATION_NUMBER?.trim();
+  const missing = [
+    ...(!apiKey ? ["VAPI_PRIVATE_API_KEY"] : []),
+    ...(!assistantId ? ["VAPI_APPOINTMENT_ASSISTANT_ID"] : []),
+    ...(!phoneNumberId ? ["VAPI_PHONE_NUMBER_ID"] : []),
+    ...(!destinationNumber ? ["VAPI_TEST_DESTINATION_NUMBER"] : []),
+  ];
+  if (missing.length) throw new ConfigurationError(missing);
+
+  const assistantIdResult = z.uuid().safeParse(assistantId);
+  const phoneNumberIdResult = z.uuid().safeParse(phoneNumberId);
+  const destinationResult = z.string().regex(/^\+[1-9]\d{7,14}$/).safeParse(destinationNumber);
+  if (!assistantIdResult.success || !phoneNumberIdResult.success || !destinationResult.success) {
+    throw new ConfigurationError([
+      ...(!assistantIdResult.success ? ["VAPI_APPOINTMENT_ASSISTANT_ID"] : []),
+      ...(!phoneNumberIdResult.success ? ["VAPI_PHONE_NUMBER_ID"] : []),
+      ...(!destinationResult.success ? ["VAPI_TEST_DESTINATION_NUMBER"] : []),
+    ]);
+  }
+
+  let response: Response;
+  try {
+    response = await fetch("https://api.vapi.ai/call", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        assistantId,
+        phoneNumberId,
+        customer: { number: destinationNumber },
+      }),
+      cache: "no-store",
+      signal: AbortSignal.timeout(15_000),
+    });
+  } catch {
+    throw new VapiApiError("Could not reach the Vapi API to start the call.");
+  }
+
+  if (!response.ok) {
+    throw new VapiApiError(
+      response.status === 401 || response.status === 403
+        ? "Vapi rejected the configured private API key or call configuration."
+        : response.status === 429
+          ? "Vapi is temporarily rate limiting call requests."
+          : `Vapi could not start the call (HTTP ${response.status}).`,
+      response.status,
+    );
+  }
+
+  let raw: unknown;
+  try {
+    raw = await response.json();
+  } catch {
+    throw new VapiApiError("Vapi returned an unreadable call response.");
+  }
+  const call = z.object({ id: z.uuid(), status: z.string().optional() }).safeParse(raw);
+  if (!call.success) throw new VapiApiError("Vapi did not return a valid call ID.");
+
+  return { callId: call.data.id, status: call.data.status ?? "queued" };
+}
