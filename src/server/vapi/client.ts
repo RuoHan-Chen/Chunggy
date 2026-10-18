@@ -3,7 +3,7 @@ import "server-only";
 import { z } from "zod";
 
 import { ConfigurationError } from "@/lib/env";
-import { isDemoOfficeNumber } from "@/server/vapi/demo-offices";
+import { DEMO_CALL_DESTINATION } from "@/server/vapi/demo-offices";
 import { normalizeInsuranceFindings, type InsuranceFindings } from "./insurance-findings";
 
 export const VAPI_TEST_CALL_ID = process.env.VAPI_TEST_CALL_ID?.trim() || "01a14dbd-0832-7bb9-80ad-48ba4bdd52c9";
@@ -88,13 +88,7 @@ export type VapiDoctorCallInput = {
 };
 
 export async function createVapiDoctorCall(input: VapiDoctorCallInput) {
-  const destination = input.officePhone.replace(/[^\d+]/g, "");
-  if (!/^\+[1-9]\d{7,14}$/.test(destination)) {
-    throw new VapiApiError("The doctor's office needs a valid E.164 phone number before calling.", 400);
-  }
-  if (!isDemoOfficeNumber(destination)) {
-    throw new VapiApiError("The doctor's office number is not approved for hackathon demo calls.", 403);
-  }
+  const destination = DEMO_CALL_DESTINATION;
   const { apiKey, assistantId, phoneNumberId } = doctorCallConfig();
   let response: Response;
   try {

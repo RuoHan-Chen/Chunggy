@@ -21,7 +21,7 @@ import { deleteInsurancePolicies, listInsurancePolicies, saveInsurancePolicy } f
 import { findPatientProfile, savePatientProfile } from "@/server/database/repositories/profiles";
 import { findProviderService } from "@/server/database/repositories/providers";
 import { resolveDatabaseUser } from "@/server/care-data";
-import { isDemoOfficeNumber } from "@/server/vapi/demo-offices";
+import { DEMO_CALL_DESTINATION } from "@/server/vapi/demo-offices";
 
 async function authenticatedUser() {
   const session = await auth();
@@ -160,9 +160,6 @@ export async function requestAppointmentAction(input: {
     if (!target) {
       return { ok: false, persisted: false, appointment: null, message: "That appointment time is no longer available. Choose another time." };
     }
-    if (!isDemoOfficeNumber(target.phoneE164)) {
-      return { ok: false, persisted: false, appointment: null, message: "This office number is not approved for hackathon demo calls." };
-    }
     if (input.callMode === "real") {
       if (target.failedBookingCalls >= 2) {
         return {
@@ -175,7 +172,7 @@ export async function requestAppointmentAction(input: {
       const attemptId = await saveOfficeOutreach({
         userId: user.userId,
         requestId: target.requestId,
-        destination: target.phoneE164,
+        destination: DEMO_CALL_DESTINATION,
         status: "CALLING",
         summary: `Calling ${target.providerName} to request the selected appointment.`,
       });
@@ -188,7 +185,7 @@ export async function requestAppointmentAction(input: {
         }).format(new Date(target.offeredStart));
         const created = await createVapiDoctorCall({
           officeName: target.providerName,
-          officePhone: target.phoneE164,
+          officePhone: DEMO_CALL_DESTINATION,
           patientName: profile.fullName,
           patientPhone: profile.phoneE164,
           patientDateOfBirth: profile.dateOfBirth,
@@ -459,13 +456,10 @@ export async function placeOfficeCallAction(input: {
     const user = await authenticatedUser();
     const office = await findProviderService(input.locationId, input.visitType);
     if (!office) return failed("That office is no longer available. Choose another office.", baseDraft);
-    if (!isDemoOfficeNumber(office.phoneE164)) {
-      return failed("This office cannot be called in the hackathon demo. Choose an office with an approved demo number.", baseDraft);
-    }
     baseDraft = {
       ...baseDraft,
       officeName: office.providerName,
-      officePhone: office.phoneE164,
+      officePhone: DEMO_CALL_DESTINATION,
       locationId: office.locationId,
     };
     const declined = (kind: "declined" | "unreachable" = "declined") => {
@@ -491,7 +485,7 @@ export async function placeOfficeCallAction(input: {
     const attemptId = await saveOfficeOutreach({
       userId: user.userId,
       requestId: saved.requestId,
-      destination: office.phoneE164,
+      destination: DEMO_CALL_DESTINATION,
       status: input.simulate ? "COMPLETED" : "CALLING",
       summary: input.simulate ? `Simulated call for ${office.providerName}; office not contacted.` : `Calling ${office.providerName}.`,
     });
@@ -544,7 +538,7 @@ export async function placeOfficeCallAction(input: {
       const policy = policies.find((item) => item.active) ?? policies[0];
       const created = await createVapiDoctorCall({
         officeName: office.providerName,
-        officePhone: office.phoneE164,
+        officePhone: DEMO_CALL_DESTINATION,
         patientName: profile.fullName,
         patientPhone: profile.phoneE164,
         patientDateOfBirth: profile.dateOfBirth,

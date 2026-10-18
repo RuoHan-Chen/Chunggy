@@ -67,11 +67,11 @@ Use this structured-output shape:
 ```
 
 The app sends `POST https://api.vapi.ai/call` only after the user reviews the
-brief and selects **Confirm and call**. The destination is the selected
-provider's E.164 phone number loaded again from Oracle. The browser never
-supplies the destination to the call action. The server only permits
-`+19172082802` and `+18327578013`; missing or different provider numbers are
-blocked before Vapi is invoked. The server polls the call until it ends, stores
+brief and selects **Confirm and call**. For the hackathon, the server always
+uses the preconfigured destination `+19172082802`; the browser never supplies
+or overrides the destination. `VAPI_PHONE_NUMBER_ID` is still required because
+it identifies the outbound Vapi caller number, not the destination. The server
+polls the call until it ends, stores
 the Vapi call ID on the outreach attempt, and returns the transcript or
 structured output to the signed-in user. A returned time is still presented as
 an office response. Selecting it creates a pending appointment request; it is
