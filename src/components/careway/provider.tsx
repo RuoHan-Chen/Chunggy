@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
 
 import { removeInsuranceAction, saveInsuranceAction, saveProfileAction } from "@/app/care-actions";
 import styles from "@/components/careway/careway.module.css";
@@ -10,6 +10,7 @@ import {
   type Appointment, type CareBootstrap, type CareSaveResult, type CareSnapshot,
   type ChatMessage, type Notice, type Preferences, type Profile, type Slot,
 } from "@/lib/careway/model";
+import { emptyPreview, readPreview, subscribePreview, writePreview } from "@/lib/careway/preview";
 
 export type CareUser = { name: string; email: string; image: string | null };
 
@@ -31,12 +32,26 @@ const CareContext = createContext<CareContextValue | null>(null);
 
 export function CareProvider({ user, initialData, children }: { user: CareUser; initialData: CareBootstrap; children: ReactNode }) {
   const router = useRouter();
-  const [snapshot, setSnapshot] = useState(initialData.snapshot);
+  const [sessionSnapshot, setSessionSnapshot] = useState(initialData.snapshot);
   const [policyId, setPolicyId] = useState(initialData.insurancePolicyId);
   const [saving, setSaving] = useState(false);
+  const subscribe = useCallback(
+    (onChange: () => void) => subscribePreview(user.email, onChange),
+    [user.email],
+  );
+  const readStoredPreview = useCallback(() => readPreview(user.email), [user.email]);
+  const preview = useSyncExternalStore(subscribe, readStoredPreview, emptyPreview);
+  const snapshot = preview ?? sessionSnapshot;
 
   const value = useMemo<CareContextValue>(() => {
-    const commit = (recipe: (current: CareSnapshot) => CareSnapshot) => setSnapshot(recipe);
+    const commit = (recipe: (current: CareSnapshot) => CareSnapshot) => {
+      const stored = readPreview(user.email);
+      if (stored) {
+        writePreview(user.email, recipe(stored));
+        return;
+      }
+      setSessionSnapshot(recipe);
+    };
     const sessionOnly = (message: string): CareSaveResult => ({ ok: true, persisted: false, message: `${message} Saved for this session only because Oracle is disconnected.` });
     async function persistProfile(status: "NOT_STARTED" | "DEFERRED" | "COMPLETE") {
       if (initialData.mode === "fallback") return sessionOnly("Profile updated.");
