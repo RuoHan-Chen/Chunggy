@@ -32,4 +32,27 @@ describe("doctor call result", () => {
     expect(normalizeDoctorCallResult({ available_times: ["Tomorrow"] })).toBeNull();
     expect(normalizeDoctorCallResult(null)).toBeNull();
   });
+
+  it("normalizes the appointment_result output attached to the Vapi assistant", () => {
+    const result = normalizeDoctorCallResult({
+      "call summary": "The office offers consultations and has three openings.",
+      consultation_fee: 50,
+      provides_service: true,
+      accepts_insurance: true,
+      referral_required: false,
+      appointment_options: ["Monday, 3:00 PM", "Wednesday, 2:00 PM", "Friday, 3:00 PM"],
+      accepting_new_patients: true,
+      additional_requirements: "",
+      prior_authorization_required: false,
+    });
+
+    expect(result?.availableTimes.map((time) => time.label)).toEqual([
+      "Monday, 3:00 PM",
+      "Wednesday, 2:00 PM",
+      "Friday, 3:00 PM",
+    ]);
+    expect(result?.estimatedCost).toBe("$50 consultation fee");
+    expect(result?.insuranceResponse).toContain("accepting");
+    expect(result?.summary).toContain("three openings");
+  });
 });

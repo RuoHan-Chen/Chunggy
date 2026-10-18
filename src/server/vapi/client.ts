@@ -208,7 +208,9 @@ export async function getVapiCall(
     ? artifact.transcript
     : typeof call.transcript === "string" ? call.transcript : null;
   const structured = isObject(artifact.structuredOutputs) ? artifact.structuredOutputs : {};
-  const output = outputId ? structured[outputId] : Object.values(structured)[0];
+  const output = outputId
+    ? structured[outputId] ?? Object.values(structured)[0]
+    : Object.values(structured)[0];
   const result = isObject(output) ? output.result : undefined;
   const terminal = ["ended", "completed", "failed"].includes(parsedCall.data.status ?? "");
   let structuredOutputStatus: VapiCallResult["structuredOutputStatus"] = "pending";

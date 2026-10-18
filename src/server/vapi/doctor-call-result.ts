@@ -22,6 +22,18 @@ const resultSchema = z.object({
   summary: z.string().trim().min(1).max(500),
 });
 
+const appointmentResultSchema = z.object({
+  "call summary": z.string().trim().min(1).max(2_000),
+  appointment_options: z.array(z.string().trim().min(1).max(100)).max(10).default([]),
+  consultation_fee: z.union([z.string(), z.number()]).nullable().optional(),
+  provides_service: z.boolean().optional(),
+  accepts_insurance: z.boolean().optional(),
+  referral_required: z.boolean().optional(),
+  accepting_new_patients: z.boolean().optional(),
+  additional_requirements: z.string().trim().max(500).optional(),
+  prior_authorization_required: z.boolean().optional(),
+});
+
 export type DoctorCallResult = {
   availableTimes: Array<{ label: string; startIso: string | null; endIso: string | null }>;
   estimatedCost: string | null;
@@ -39,13 +51,40 @@ function validIso(value: string | undefined) {
 
 export function normalizeDoctorCallResult(value: unknown): DoctorCallResult | null {
   const parsed = resultSchema.safeParse(value);
-  if (!parsed.success) return null;
+  if (parsed.success) {
+    return {
+      availableTimes: parsed.data.available_times,
+      estimatedCost: parsed.data.estimated_cost == null ? null : String(parsed.data.estimated_cost),
+      insuranceResponse: parsed.data.insurance_response ?? null,
+      officeRequirements: parsed.data.office_requirements,
+      followUpNotes: parsed.data.follow_up_notes ?? null,
+      summary: parsed.data.summary,
+    };
+  }
+
+  const appointment = appointmentResultSchema.safeParse(value);
+  if (!appointment.success) return null;
+  const data = appointment.data;
+  const requirements = [
+    data.referral_required ? "Referral required" : null,
+    data.prior_authorization_required ? "Prior authorization required" : null,
+    data.additional_requirements || null,
+  ].filter((item): item is string => Boolean(item));
+  const followUp = [
+    data.provides_service === false ? "The office does not provide the requested service." : null,
+    data.accepting_new_patients === false ? "The office is not accepting new patients." : null,
+  ].filter((item): item is string => Boolean(item));
+
   return {
-    availableTimes: parsed.data.available_times,
-    estimatedCost: parsed.data.estimated_cost == null ? null : String(parsed.data.estimated_cost),
-    insuranceResponse: parsed.data.insurance_response ?? null,
-    officeRequirements: parsed.data.office_requirements,
-    followUpNotes: parsed.data.follow_up_notes ?? null,
-    summary: parsed.data.summary,
+    availableTimes: data.appointment_options.map((label) => ({ label, startIso: null, endIso: null })),
+    estimatedCost: data.consultation_fee == null ? null : `$${data.consultation_fee} consultation fee`,
+    insuranceResponse: data.accepts_insurance === undefined
+      ? null
+      : data.accepts_insurance
+        ? "The office reported accepting the provided insurance; benefits still require verification."
+        : "The office reported not accepting the provided insurance.",
+    officeRequirements: requirements,
+    followUpNotes: followUp.length ? followUp.join(" ") : null,
+    summary: data["call summary"].slice(0, 500),
   };
 }
