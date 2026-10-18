@@ -99,7 +99,6 @@ export async function createVapiDoctorCall(input: VapiDoctorCallInput) {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        name: `Assurance appointment outreach - ${input.officeName}`.slice(0, 100),
         assistantId,
         phoneNumberId,
         customer: { number: destination, name: input.officeName },
@@ -128,10 +127,27 @@ export async function createVapiDoctorCall(input: VapiDoctorCallInput) {
     throw new VapiApiError("Could not reach Vapi to start the doctor-office call.");
   }
   if (!response.ok) {
+    const rawError = await response.text().catch(() => "");
+    let apiDetail = "";
+    if (rawError) {
+      try {
+        const parsedError: unknown = JSON.parse(rawError);
+        if (isObject(parsedError)) {
+          apiDetail =
+            typeof parsedError.message === "string"
+              ? parsedError.message
+              : typeof parsedError.error === "string"
+                ? parsedError.error
+                : "";
+        }
+      } catch {
+        apiDetail = rawError;
+      }
+    }
     throw new VapiApiError(
       response.status === 401 || response.status === 403
         ? "Vapi rejected the configured private API key or outbound-call resources."
-        : `Vapi could not start the doctor-office call (HTTP ${response.status}).`,
+        : `Vapi could not start the doctor-office call (HTTP ${response.status})${apiDetail ? `: ${apiDetail.slice(0, 300)}` : "."}`,
       response.status,
     );
   }
