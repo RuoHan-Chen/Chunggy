@@ -6,6 +6,9 @@ export type Profile = {
   fullName: string;
   phone: string;
   dateOfBirth: string;
+  addressLine1: string;
+  city: string;
+  region: string;
   zip: string;
   language: string;
   payment: PaymentChoice;
@@ -77,6 +80,23 @@ export type CareSnapshot = {
   notices: Notice[];
 };
 
+export type CareDataMode = "database" | "fallback";
+
+export type CareBootstrap = {
+  mode: CareDataMode;
+  snapshot: CareSnapshot;
+  insurancePolicyId: string | null;
+  providerSlots: Slot[];
+  message: string | null;
+};
+
+export type CareSaveResult = {
+  ok: boolean;
+  persisted: boolean;
+  message: string;
+  insurancePolicyId?: string | null;
+};
+
 export const visitTypes = ["dental", "eye", "annual", "other"];
 
 export const timeChoices = [
@@ -104,6 +124,9 @@ export function defaultProfile(name = "Maya Chen"): Profile {
     fullName: name || "Maya Chen",
     phone: "(312) 555-0142",
     dateOfBirth: "07 / 14 / 1990",
+    addressLine1: "123 Example Ave",
+    city: "Chicago",
+    region: "IL",
     zip: "60614",
     language: "English",
     payment: "self",
@@ -112,6 +135,28 @@ export function defaultProfile(name = "Maya Chen"): Profile {
     insuranceCompany: "Example Health",
     memberId: "4812",
     planName: "Example PPO",
+    cardFrontName: "",
+    cardBackName: "",
+    coverageStatus: "not_verified",
+  };
+}
+
+export function emptyProfile(name = ""): Profile {
+  return {
+    fullName: name,
+    phone: "",
+    dateOfBirth: "",
+    addressLine1: "",
+    city: "",
+    region: "",
+    zip: "",
+    language: "English",
+    payment: "later",
+    onboardingComplete: false,
+    deferred: false,
+    insuranceCompany: "",
+    memberId: "",
+    planName: "",
     cardFrontName: "",
     cardBackName: "",
     coverageStatus: "not_verified",
@@ -161,6 +206,21 @@ export function defaultSnapshot(name = ""): CareSnapshot {
         read: false,
       },
     ],
+  };
+}
+
+export function databaseSnapshot(name = ""): CareSnapshot {
+  const profile = emptyProfile(name);
+  return {
+    ...defaultSnapshot(name),
+    profile,
+    preferences: {
+      ...defaultPreferences(),
+      location: locationLabel(profile.zip),
+      paymentLabel: paymentLabel(profile.payment),
+    },
+    messages: [],
+    bookingStep: "idle",
   };
 }
 

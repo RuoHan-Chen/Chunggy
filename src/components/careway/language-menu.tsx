@@ -1,31 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { languages } from "@/lib/careway/model";
 import { IconChevronDown, IconGlobe } from "@/components/careway/icons";
 import styles from "@/components/careway/careway.module.css";
-
-const languageListeners = new Set<() => void>();
-let languageCache: string | null = null;
-
-function subscribeLanguage(listener: () => void) {
-  languageListeners.add(listener);
-  return () => languageListeners.delete(listener);
-}
-
-function readLanguage() {
-  if (languageCache === null) {
-    languageCache = localStorage.getItem("careway-language") || "English";
-  }
-  return languageCache;
-}
-
-function writeLanguage(language: string) {
-  languageCache = language;
-  localStorage.setItem("careway-language", language);
-  languageListeners.forEach((listener) => listener());
-}
 
 export function LanguageMenu({
   value = "English",
@@ -35,9 +14,8 @@ export function LanguageMenu({
   onChange?: (language: string) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const stored = useSyncExternalStore(subscribeLanguage, readLanguage, () => "English");
   const rootRef = useRef<HTMLDivElement>(null);
-  const selected = onChange ? value : stored;
+  const selected = value;
 
   useEffect(() => {
     function onPointer(event: MouseEvent) {
@@ -67,8 +45,7 @@ export function LanguageMenu({
               <button
                 aria-selected={language === selected}
                 onClick={() => {
-                  if (onChange) onChange(language);
-                  else writeLanguage(language);
+                  onChange?.(language);
                   setOpen(false);
                 }}
                 role="option"

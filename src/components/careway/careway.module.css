@@ -1190,6 +1190,44 @@
   font-weight: 700;
 }
 
+.dataBanner,
+.dataConnected {
+  align-items: center;
+  display: flex;
+  font-size: 0.82rem;
+  gap: 12px;
+  justify-content: center;
+  min-height: 34px;
+  padding: 7px 16px;
+  position: relative;
+  z-index: 50;
+}
+
+.dataBanner {
+  background: #fff4d6;
+  border-bottom: 1px solid #e6c66d;
+  color: #684f0d;
+}
+
+.dataBanner button {
+  background: transparent;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+  padding: 3px 10px;
+}
+
+.dataConnected {
+  background: #eaf8ef;
+  color: #27633b;
+  justify-content: flex-end;
+  min-height: 26px;
+  padding-block: 4px;
+}
+
 .term {
   display: flex;
   width: 100%;

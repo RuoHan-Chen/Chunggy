@@ -60,6 +60,17 @@ export async function listInsurancePolicies(userId: string) {
   return withConnection((connection) => selectPolicies(connection, validUserId));
 }
 
+export async function deleteInsurancePolicies(userId: string) {
+  const validUserId = insurancePolicySchema.shape.userId.parse(userId);
+  return withTransaction(async (connection) => {
+    const result = await connection.execute(
+      `DELETE FROM INSURANCE_POLICIES WHERE USER_ID = :userId`,
+      { userId: validUserId },
+    );
+    return result.rowsAffected ?? 0;
+  });
+}
+
 async function selectPolicies(connection: oracledb.Connection, userId: string) {
   const result = await connection.execute<PolicyRow>(
     `SELECT POLICY_ID AS "policyId",

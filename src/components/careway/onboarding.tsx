@@ -29,6 +29,7 @@ export function Onboarding() {
   const care = useCare();
   const [step, setStep] = useState(0);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [saveMessage, setSaveMessage] = useState("");
   const profile = care.profile;
 
   if (!care.ready) {
@@ -58,20 +59,24 @@ export function Onboarding() {
     setStep(2);
   }
 
-  function saveLater() {
-    care.deferOnboarding();
-    router.push("/home");
+  async function saveLater() {
+    setSaveMessage("Saving…");
+    const result = await care.deferOnboarding();
+    setSaveMessage(result.message);
+    if (result.ok) router.push("/home");
   }
 
-  function finish() {
+  async function finish() {
     const nextErrors = aboutErrors(profile);
     if (Object.keys(nextErrors).length > 0) {
       setErrors(nextErrors);
       setStep(0);
       return;
     }
-    care.completeOnboarding();
-    router.push("/home");
+    setSaveMessage("Saving…");
+    const result = await care.completeOnboarding();
+    setSaveMessage(result.message);
+    if (result.ok) router.push("/home");
   }
 
   return (
@@ -172,6 +177,36 @@ export function Onboarding() {
                     </label>
                   </div>
                   <label className={styles.field}>
+                    Street address (optional)
+                    <input
+                      autoComplete="street-address"
+                      className={styles.input}
+                      onChange={(event) => care.updateProfile({ addressLine1: event.target.value })}
+                      value={profile.addressLine1}
+                    />
+                  </label>
+                  <div className={styles.fieldRow}>
+                    <label className={styles.field}>
+                      City (optional)
+                      <input
+                        autoComplete="address-level2"
+                        className={styles.input}
+                        onChange={(event) => care.updateProfile({ city: event.target.value })}
+                        value={profile.city}
+                      />
+                    </label>
+                    <label className={styles.field}>
+                      State (optional)
+                      <input
+                        autoComplete="address-level1"
+                        className={styles.input}
+                        maxLength={2}
+                        onChange={(event) => care.updateProfile({ region: event.target.value.toUpperCase() })}
+                        value={profile.region}
+                      />
+                    </label>
+                  </div>
+                  <label className={styles.field}>
                     Preferred language
                     <select
                       className={styles.input}
@@ -234,9 +269,10 @@ export function Onboarding() {
                   <button className={styles.btnPrimary} onClick={continueFromAbout} type="button">
                     Continue
                   </button>
-                  <button className={styles.btnOutline} onClick={saveLater} type="button">
+                  <button className={styles.btnOutline} disabled={care.saving} onClick={saveLater} type="button">
                     Save and finish later
                   </button>
+                  {saveMessage ? <p className={styles.saved}>{saveMessage}</p> : null}
                 </div>
               </div>
               <aside className={styles.sideCard}>
@@ -282,7 +318,10 @@ export function Onboarding() {
                 <section className={styles.card}>
                   {profile.payment === "insurance" ? (
                     <>
-                      <h2>Insurance card</h2>
+                      <h2>Insurance card preview</h2>
+                      <p className={styles.cardLede}>
+                        Card files are not stored in this phase. Type the details below manually.
+                      </p>
                       <div className={styles.fieldRow}>
                         <FileSlot
                           label="Front of card"
@@ -427,13 +466,14 @@ export function Onboarding() {
                   </dl>
                 </section>
                 <div className={styles.actions}>
-                  <button className={styles.btnPrimary} onClick={finish} type="button">
-                    Finish setup
+                  <button className={styles.btnPrimary} disabled={care.saving} onClick={finish} type="button">
+                    {care.saving ? "Saving…" : "Finish setup"}
                   </button>
                   <button className={styles.btnOutline} onClick={() => setStep(1)} type="button">
                     Back
                   </button>
                 </div>
+                {saveMessage ? <p className={styles.saved}>{saveMessage}</p> : null}
               </div>
               <aside className={styles.sideCard}>
                 <h2>You stay in control</h2>

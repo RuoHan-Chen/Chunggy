@@ -41,18 +41,22 @@ export function ProfileView({ initialTab = "Insurance" }: { initialTab?: Tab }) 
   const [permissionOpen, setPermissionOpen] = useState(false);
   const profile = care.profile;
 
-  function savePersonal() {
+  async function savePersonal() {
     const next = aboutErrors(profile);
     setErrors(next);
     if (Object.keys(next).length) return;
-    setSaved("Personal details saved on this device.");
+    setSaved("Saving…");
+    const result = await care.saveProfile();
+    setSaved(result.message);
   }
 
-  function saveInsurance() {
-    const next = insuranceErrors(profile);
+  async function saveInsurance() {
+    const next = profile.payment === "insurance" ? insuranceErrors(profile) : {};
     setErrors(next);
     if (Object.keys(next).length) return;
-    setSaved("Insurance details saved on this device.");
+    setSaved("Saving…");
+    const result = await care.saveInsurance();
+    setSaved(result.message);
   }
 
   const maskedId = profile.memberId
@@ -145,6 +149,36 @@ export function ProfileView({ initialTab = "Insurance" }: { initialTab?: Tab }) 
             </label>
           </div>
           <label className={styles.field}>
+            Street address
+            <input
+              autoComplete="street-address"
+              className={styles.input}
+              onChange={(event) => care.updateProfile({ addressLine1: event.target.value })}
+              value={profile.addressLine1}
+            />
+          </label>
+          <div className={styles.fieldRow}>
+            <label className={styles.field}>
+              City
+              <input
+                autoComplete="address-level2"
+                className={styles.input}
+                onChange={(event) => care.updateProfile({ city: event.target.value })}
+                value={profile.city}
+              />
+            </label>
+            <label className={styles.field}>
+              State
+              <input
+                autoComplete="address-level1"
+                className={styles.input}
+                maxLength={2}
+                onChange={(event) => care.updateProfile({ region: event.target.value.toUpperCase() })}
+                value={profile.region}
+              />
+            </label>
+          </div>
+          <label className={styles.field}>
             Preferred language
             <select
               className={styles.input}
@@ -161,8 +195,8 @@ export function ProfileView({ initialTab = "Insurance" }: { initialTab?: Tab }) 
             <span>From your Google account.</span>
           </label>
           <div className={styles.actions}>
-            <button className={styles.btnPrimary} onClick={savePersonal} type="button">
-              Save details
+            <button className={styles.btnPrimary} disabled={care.saving} onClick={savePersonal} type="button">
+              {care.saving ? "Saving…" : "Save details"}
             </button>
           </div>
           {saved ? <p className={styles.saved}>{saved}</p> : null}
@@ -199,7 +233,7 @@ export function ProfileView({ initialTab = "Insurance" }: { initialTab?: Tab }) 
             <section className={styles.card}>
               <h2>Upload your insurance card (optional)</h2>
               <p className={styles.cardLede}>
-                Add clear photos of the front and back of your card. This helps us get your coverage details right.
+                Upload is a visual preview in this phase. Enter the insurance details below manually; card files are not stored.
               </p>
               <div className={styles.fieldRow}>
                 <Upload
@@ -215,22 +249,9 @@ export function ProfileView({ initialTab = "Insurance" }: { initialTab?: Tab }) 
               </div>
               <div className={styles.cardHead}>
                 <h3>
-                  Extracted details <span className={styles.info}>i</span>
+                  Insurance details <span className={styles.info}>i</span>
                 </h3>
-                <button
-                  onClick={() => {
-                    if (!profile.insuranceCompany) {
-                      care.updateProfile({
-                        insuranceCompany: "Example Health",
-                        memberId: profile.memberId || "4812",
-                        planName: profile.planName || "Example PPO",
-                      });
-                    }
-                  }}
-                  type="button"
-                >
-                  Review extracted details
-                </button>
+                <span>Enter these manually from your card.</span>
               </div>
               <label className={styles.field}>
                 Insurance company
@@ -268,14 +289,15 @@ export function ProfileView({ initialTab = "Insurance" }: { initialTab?: Tab }) 
                 {errors.planName ? <em>{errors.planName}</em> : null}
               </label>
               <div className={styles.actions}>
-                <button className={styles.btnPrimary} onClick={saveInsurance} type="button">
-                  Save insurance
+                <button className={styles.btnPrimary} disabled={care.saving} onClick={saveInsurance} type="button">
+                  {care.saving ? "Saving…" : "Save payment & insurance"}
                 </button>
                 <button
                   className={styles.textDanger}
-                  onClick={() => {
-                    care.clearInsurance();
-                    setSaved("Insurance card removed on this device.");
+                  onClick={async () => {
+                    setSaved("Removing…");
+                    const result = await care.clearInsurance();
+                    setSaved(result.message);
                   }}
                   type="button"
                 >
@@ -368,8 +390,9 @@ export function ProfileView({ initialTab = "Insurance" }: { initialTab?: Tab }) 
         <section className={styles.cardNarrow}>
           <h2>Privacy</h2>
           <p className={styles.cardLede}>
-            Chunggy keeps your profile on this device for the preview. Google handles sign-in, and a visit request
-            still needs your permission on the review screen.
+            {care.dataMode === "database"
+              ? "Chunggy stores your profile and manually entered insurance details in Oracle. Google handles sign-in, and a visit request still needs your permission on the review screen."
+              : "Oracle is disconnected, so this development session uses temporary example data. Your changes disappear when the page reloads."}
           </p>
           <ul className={styles.plainList}>
             <li>Phone number is used for reminders you opt into.</li>
