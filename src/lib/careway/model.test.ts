@@ -87,6 +87,32 @@ describe("bookingTurn", () => {
     expect(turn.preferences).toBe(preferences);
     expect(turn.reply).toContain("self-pay ranges");
   });
+
+  it("guides a Spanish booking conversation", () => {
+    const profile = { ...emptyProfile(), language: "Spanish" };
+    const visit = bookingTurn("Quiero reservar una cita dental", "idle", defaultPreferences(), profile);
+    const location = bookingTurn("60614", visit.step, visit.preferences, profile);
+    const time = bookingTurn("lunes por la tarde", location.step, location.preferences, { ...profile, zip: location.zip });
+    const payment = bookingTurn("Seguro", time.step, time.preferences, { ...profile, zip: time.zip });
+
+    expect(visit.reply).toContain("código postal");
+    expect(time.reply).toContain("¿Cómo deseas pagar?");
+    expect(payment.step).toBe("ready");
+    expect(payment.reply).toContain("Puedo buscar opciones");
+  });
+
+  it("guides a Chinese booking conversation", () => {
+    const profile = { ...emptyProfile(), language: "Chinese" };
+    const visit = bookingTurn("我想预约牙科", "idle", defaultPreferences(), profile);
+    const location = bookingTurn("60614", visit.step, visit.preferences, profile);
+    const time = bookingTurn("星期一下午", location.step, location.preferences, { ...profile, zip: location.zip });
+    const payment = bookingTurn("保险", time.step, time.preferences, { ...profile, zip: time.zip });
+
+    expect(visit.reply).toContain("邮政编码");
+    expect(time.reply).toContain("如何付款");
+    expect(payment.step).toBe("ready");
+    expect(payment.reply).toContain("我可以查找");
+  });
 });
 
 describe("chatFollowUpError", () => {

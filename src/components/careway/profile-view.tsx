@@ -228,6 +228,7 @@ export function ProfileView({ initialTab = "Insurance" }: { initialTab?: Tab }) 
             >
               <option>English</option>
               <option>Spanish</option>
+              <option>Chinese</option>
             </select>
           </label>
           <label className={styles.field}>

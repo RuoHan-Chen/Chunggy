@@ -237,6 +237,10 @@ export async function findOpenCareRequest(userId: string) {
   });
 }
 
+export async function findCareRequest(userId: string, requestId: string) {
+  return withTransaction((connection) => loadCareRequest(connection, userId, requestId));
+}
+
 async function openRequestId(
   connection: oracledb.Connection,
   userId: string,

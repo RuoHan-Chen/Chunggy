@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { IconBot, IconPaperclip, IconSend } from "@/components/careway/icons";
 import { useCare } from "@/components/careway/provider";
 import { displayPhone, workflowLabel } from "@/lib/careway/call-flow";
+import { languageLocale, translate } from "@/lib/careway/i18n";
 import { bookingChoices } from "@/lib/careway/model";
 import styles from "@/components/careway/careway.module.css";
 
@@ -18,6 +19,8 @@ const starterPrompts = [
 
 export function AssistantView() {
   const care = useCare();
+  const t = (text: string) => translate(care.profile.language, text);
+  const locale = languageLocale(care.profile.language);
   const router = useRouter();
   const [draft, setDraft] = useState("");
   const [attachment, setAttachment] = useState("");
@@ -25,7 +28,7 @@ export function AssistantView() {
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
   const transcriptRef = useRef<HTMLDivElement>(null);
-  const choices = bookingChoices(care.bookingStep, care.profile.zip);
+  const choices = bookingChoices(care.bookingStep, care.profile.zip, care.profile.language);
   const offices = care.providerSlots.filter((slot, index, all) =>
     slot.visitType === care.preferences.visitType && all.findIndex((item) => item.provider === slot.provider) === index,
   );
@@ -84,14 +87,14 @@ export function AssistantView() {
   return (
     <div className={styles.page}>
       <header className={styles.pageIntro}>
-        <h1>Your care assistant</h1>
-        <p>Start separate conversations for scheduling and general information.</p>
+        <h1>{t("Your care assistant")}</h1>
+        <p>{t("Start separate conversations for scheduling and general information.")}</p>
       </header>
       <div className={styles.assistantGrid}>
         <aside className={styles.chatSidebar}>
           <div className={styles.chatSidebarHead}>
-            <strong>Conversations</strong>
-            <button className={styles.newChatButton} onClick={care.createChat} type="button">+ New chat</button>
+            <strong>{t("Conversations")}</strong>
+            <button className={styles.newChatButton} onClick={care.createChat} type="button">{t("+ New chat")}</button>
           </div>
           <div className={styles.chatList}>
             {care.chatSessions.map((session) => {
@@ -117,12 +120,12 @@ export function AssistantView() {
                   ) : (
                     <button className={styles.chatSessionButton} onClick={() => care.switchChat(session.id)} type="button">
                       <span>{session.title}</span>
-                      <small>{(session.messagesLoaded ? session.messages.length : session.messageCount) === 0 ? "No messages" : `${session.messagesLoaded ? session.messages.length : session.messageCount} messages`}</small>
+                      <small>{(session.messagesLoaded ? session.messages.length : session.messageCount) === 0 ? t("No messages") : `${session.messagesLoaded ? session.messages.length : session.messageCount} ${t("messages")}`}</small>
                     </button>
                   )}
                   <div className={styles.chatSessionActions}>
-                    <button onClick={() => beginRename(session.id, session.title)} type="button">Rename</button>
-                    <button onClick={() => removeChat(session.id, session.title)} type="button">Delete</button>
+                    <button onClick={() => beginRename(session.id, session.title)} type="button">{t("Rename")}</button>
+                    <button onClick={() => removeChat(session.id, session.title)} type="button">{t("Delete")}</button>
                   </div>
                 </div>
               );
@@ -175,7 +178,7 @@ export function AssistantView() {
             ) : null}
             {care.savedCareRequest ? (
               <button className={styles.contextButton} onClick={care.importSavedRequest} type="button">
-                Import saved request
+                {t("Import saved request")}
               </button>
             ) : null}
             </div>
@@ -197,12 +200,12 @@ export function AssistantView() {
             {care.messages.length === 0 ? (
               <div className={styles.chatEmpty}>
                 <span className={styles.botAvatar}><IconBot /></span>
-                <h2>What can I help with?</h2>
-                <p>Choose a starting point or type your own question below.</p>
+                <h2>{t("What can I help with?")}</h2>
+                <p>{t("Choose a starting point or type your own question below.")}</p>
                 <div className={styles.starterGrid}>
                   {starterPrompts.map((prompt) => (
                     <button className={styles.starterButton} key={prompt} onClick={() => chooseStarter(prompt)} type="button">
-                      {prompt}
+                      {t(prompt)}
                     </button>
                   ))}
                 </div>
@@ -229,12 +232,12 @@ export function AssistantView() {
             {care.activeChat.pending ? (
               <div aria-live="polite" className={styles.botGroup}>
                 <span className={styles.botAvatar}><IconBot /></span>
-                <p className={styles.typingBubble}>{care.callingOffice ? `On the phone with ${care.callingOffice}…` : "Thinking…"}</p>
+                <p className={styles.typingBubble}>{care.callingOffice ? `${t("Calling")} ${care.callingOffice}…` : `${t("Thinking")}…`}</p>
               </div>
             ) : null}
             {callResult && !callResult.savedForFollowUp ? (
               <div className={styles.returnedTimes}>
-                <strong>Office response</strong>
+                <strong>{t("Office response")}</strong>
                 {callResult.availableTimes.length ? (
                   callResult.availableTimes.map((time, index) => (
                     <button
@@ -250,10 +253,10 @@ export function AssistantView() {
                           id: time.optionId,
                           startIso: start.toISOString(),
                           endIso: end.toISOString(),
-                          dateLabel: new Intl.DateTimeFormat("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" }).format(start),
-                          longDate: new Intl.DateTimeFormat("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" }).format(start),
-                          timeLabel: new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit" }).format(start),
-                          endLabel: new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit" }).format(end),
+                          dateLabel: new Intl.DateTimeFormat(locale, { weekday: "short", month: "short", day: "numeric", year: "numeric" }).format(start),
+                          longDate: new Intl.DateTimeFormat(locale, { weekday: "long", month: "long", day: "numeric", year: "numeric" }).format(start),
+                          timeLabel: new Intl.DateTimeFormat(locale, { hour: "numeric", minute: "2-digit" }).format(start),
+                          endLabel: new Intl.DateTimeFormat(locale, { hour: "numeric", minute: "2-digit" }).format(end),
                           period: start.getHours() < 12 ? "morning" : "afternoon",
                         });
                         router.push("/appointments/review");
@@ -264,10 +267,10 @@ export function AssistantView() {
                     </button>
                   ))
                 ) : (
-                  <span>No appointment times were returned.</span>
+                  <span>{t("No appointment times were returned.")}</span>
                 )}
                 <button className={styles.chip} onClick={() => submit("Save for follow-up")} type="button">
-                  Save for follow-up
+                  {t("Save for follow-up")}
                 </button>
               </div>
             ) : null}
@@ -293,7 +296,7 @@ export function AssistantView() {
                   >
                     <strong>{office.provider}</strong>
                     <span>{office.address}, {office.cityLine}</span>
-                    <span>{office.rating} rating · Estimated {office.estimate}</span>
+                    <span>{office.rating} {t("rating")} · {t("Estimated")} {office.estimate}</span>
                     <span>{displayPhone(office.phone ?? "")}</span>
                   </button>
                 ))}
@@ -301,8 +304,8 @@ export function AssistantView() {
             ) : null}
             {reviewing && !care.callingOffice ? (
               <div className={styles.chips}>
-                <button className={styles.btnPrimary} disabled={care.activeChat.pending} onClick={() => submit("Real Vapi call")} type="button">Real Vapi call</button>
-                <button className={styles.btnOutline} disabled={care.activeChat.pending} onClick={() => submit("Fake demo call")} type="button">Fake demo call</button>
+                <button className={styles.btnPrimary} disabled={care.activeChat.pending} onClick={() => submit("Real Vapi call")} type="button">{t("Real Vapi call")}</button>
+                <button className={styles.btnOutline} disabled={care.activeChat.pending} onClick={() => submit("Fake demo call")} type="button">{t("Fake demo call")}</button>
               </div>
             ) : null}
             {care.bookingStep === "ready" && !reviewing && !care.callingOffice && !callFailed && !callResult ? (
@@ -321,7 +324,7 @@ export function AssistantView() {
                   }}
                   type="button"
                 >
-                  {care.saving ? "Saving options…" : "Find options"}
+                  {care.saving ? t("Saving options…") : t("Find options")}
                 </button>
                 {searchError ? <p className={styles.formError}>{searchError}</p> : null}
               </div>
@@ -329,21 +332,21 @@ export function AssistantView() {
           </div>
           {care.callingOffice ? (
             <div className={styles.callingBanner} role="status">
-              <strong>Calling {care.callingOffice}</strong>
-              <span>Please wait here. The result will appear in this chat when the call finishes.</span>
+              <strong>{t("Calling")} {care.callingOffice}</strong>
+              <span>{t("Please wait here. The result will appear in this chat when the call finishes.")}</span>
             </div>
           ) : null}
           {callFailed && !care.callingOffice ? (
             <div className={styles.callFailed} role="status">
-              <strong>Call failed</strong>
-              <span>No further call will be placed right now. Try again later.</span>
+              <strong>{t("Call failed")}</strong>
+              <span>{t("No further call will be placed right now. Try again later.")}</span>
             </div>
           ) : null}
           {care.activeChat.error && !care.activeChat.pending ? (
             <div className={styles.chatError} role="alert">
-              <strong>Message not completed</strong>
+              <strong>{t("Message not completed")}</strong>
               <span>{care.activeChat.error}</span>
-              <button onClick={() => void care.retryMessage()} type="button">Retry</button>
+              <button onClick={() => void care.retryMessage()} type="button">{t("Retry")}</button>
             </div>
           ) : null}
           <form
@@ -355,7 +358,7 @@ export function AssistantView() {
           >
             <label className={styles.clip}>
               <IconPaperclip />
-              <span className={styles.srOnly}>Attach a file</span>
+              <span className={styles.srOnly}>{t("Attach a file")}</span>
               <input
                 disabled={care.activeChat.pending}
                 onChange={(event) => {
@@ -368,11 +371,11 @@ export function AssistantView() {
             <input
               disabled={care.activeChat.pending}
               onChange={(event) => setDraft(event.target.value)}
-              placeholder="Ask a question or tell me what to book"
+              placeholder={t("Ask a question or tell me what to book")}
               value={draft}
             />
             {attachment ? <em className={styles.fileChip}>{attachment}</em> : null}
-            <button aria-label="Send" className={styles.send} disabled={care.activeChat.pending || (!draft.trim() && !attachment)} type="submit"><IconSend /></button>
+            <button aria-label={t("Send")} className={styles.send} disabled={care.activeChat.pending || (!draft.trim() && !attachment)} type="submit"><IconSend /></button>
           </form>
         </section>
       </div>

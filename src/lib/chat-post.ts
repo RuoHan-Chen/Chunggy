@@ -61,6 +61,7 @@ export async function postChat(request: Request, provider: ChatProvider) {
 
   const history = getHistory(body);
   const context = getContext(body);
+  const language = getLanguage(body);
 
   if (!history || !context) {
     return Response.json(
@@ -69,7 +70,7 @@ export async function postChat(request: Request, provider: ChatProvider) {
     );
   }
 
-  const prompt = buildPrompt(message, history, context);
+  const prompt = buildPrompt(message, history, context, language);
 
   if (prompt.length > MAX_PROMPT_LENGTH) {
     return Response.json(
@@ -117,6 +118,12 @@ function getMessage(body: unknown) {
   return typeof message === "string" ? message.trim() : undefined;
 }
 
+function getLanguage(body: unknown) {
+  if (!body || typeof body !== "object" || !("language" in body)) return "English";
+  const { language } = body as { language?: unknown };
+  return language === "Spanish" || language === "Chinese" ? language : "English";
+}
+
 type HistoryItem = { role: "user" | "assistant"; text: string };
 type ContextItem = { kind: "appointment" | "conversation" | "care_request"; title: string; body: string };
 
@@ -162,8 +169,9 @@ function getContext(body: unknown): ContextItem[] | undefined {
   return parsed;
 }
 
-function buildPrompt(message: string, history: HistoryItem[], context: ContextItem[]) {
+function buildPrompt(message: string, history: HistoryItem[], context: ContextItem[], language: string) {
   const sections = [
+    `Respond in ${language}. Keep office names, addresses, phone numbers, dates, prices, and insurance identifiers exact.`,
     history.length > 0
       ? `Conversation history:\n${history.map((item) => `${item.role}: ${item.text}`).join("\n")}`
       : "",

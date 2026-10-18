@@ -56,6 +56,7 @@ type CareContextValue = {
   importAppointmentContext: () => void; importChatContext: (id: string) => void;
   importSavedRequest: () => void; prepareCareRequest: () => Promise<CareSaveResult>;
   updateProfile: (patch: Partial<Profile>) => void; updatePreferences: (patch: Partial<Preferences>) => void;
+  setLanguage: (language: string) => Promise<CareSaveResult>;
   deferOnboarding: () => Promise<CareSaveResult>; completeOnboarding: () => Promise<CareSaveResult>;
   saveProfile: () => Promise<CareSaveResult>; saveInsurance: () => Promise<CareSaveResult>;
   sendMessage: (text: string) => Promise<void>; callingOffice: string | null; selectSlot: (slot: Slot) => void;
@@ -253,6 +254,7 @@ export function CareProvider({ user, initialData, children }: { user: CareUser; 
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message,
+          language: snapshot.profile.language,
           history: history.slice(-12).map((item) => ({ role: item.role, text: item.text.slice(0, 2_000) })),
           context: requestContext.slice(0, 6).map((item) => ({ kind: item.kind, title: item.title, body: item.body.slice(0, 2_000) })),
         }),
@@ -451,6 +453,15 @@ export function CareProvider({ user, initialData, children }: { user: CareUser; 
           }));
         }
       },
+      async setLanguage(language) {
+        const profile = { ...snapshot.profile, language };
+        commit((current) => ({ ...current, profile: { ...current.profile, language } }));
+        if (initialData.mode === "fallback") return sessionOnly("Language changed for this session.");
+        return saveProfileAction(
+          profile,
+          profile.onboardingComplete ? "COMPLETE" : profile.deferred ? "DEFERRED" : "NOT_STARTED",
+        );
+      },
       updatePreferences: (patch) => updateActiveChat((session) => ({ ...session, preferences: { ...session.preferences, ...patch } })),
       async deferOnboarding() {
         const result = await persistProfile("DEFERRED");
@@ -535,6 +546,7 @@ export function CareProvider({ user, initialData, children }: { user: CareUser; 
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 message: trimmed,
+                language: snapshot.profile.language,
                 history: session.messages.filter((message) => message.status !== "failed").slice(-12).map((message) => ({
                   role: message.role,
                   text: message.text.slice(0, 2_000),
@@ -651,6 +663,7 @@ export function CareProvider({ user, initialData, children }: { user: CareUser; 
               declineCount: draft.declineCount,
               simulate: simulateCall,
             });
+            if (result.saved) setSavedCareRequest(result.saved);
             const finished = { ...session, title: nextTitle, callDraft: result.callDraft, pending: false, error: null };
             if (persistChats && conversationId) {
               const saved = await persistChat({ ...finished, id: conversationId, stored: true }, [
@@ -690,14 +703,26 @@ export function CareProvider({ user, initialData, children }: { user: CareUser; 
               { id: `assistant-${stamp}`, role: "assistant", text: turn.reply, time, status: "complete" },
             ],
           }));
+          const nextProfile = { ...snapshot.profile, zip: turn.zip, payment: turn.payment };
+          const profileChanged = nextProfile.zip !== snapshot.profile.zip || nextProfile.payment !== snapshot.profile.payment;
           commit((current) => ({ ...current, profile: { ...current.profile, zip: turn.zip, payment: turn.payment } }));
           if (!persistChats) return;
           try {
+            const profileResult = profileChanged
+              ? await saveProfileAction(
+                  nextProfile,
+                  nextProfile.onboardingComplete ? "COMPLETE" : nextProfile.deferred ? "DEFERRED" : "NOT_STARTED",
+                )
+              : null;
             const saved = await persistChat(next, [
               { role: "user", text: trimmed, status: "complete" },
               { role: "assistant", text: turn.reply, status: "complete" },
             ]);
-            installChat(sessionId, { ...saved, pending: false, error: null });
+            installChat(sessionId, {
+              ...saved,
+              pending: false,
+              error: profileResult && !profileResult.ok ? profileResult.message : null,
+            });
           } catch (error) {
             updateChat(sessionId, (current) => ({
               ...current,

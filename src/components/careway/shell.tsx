@@ -16,6 +16,7 @@ import {
 } from "@/components/careway/icons";
 import { LanguageMenu } from "@/components/careway/language-menu";
 import { useCare } from "@/components/careway/provider";
+import { translate } from "@/lib/careway/i18n";
 import { initials } from "@/lib/careway/model";
 import styles from "@/components/careway/careway.module.css";
 
@@ -39,6 +40,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [noticesOpen, setNoticesOpen] = useState(false);
   const displayName = care.profile.fullName || care.user.name || "Assurance member";
   const unread = care.notices.some((notice) => !notice.read);
+  const t = (text: string) => translate(care.profile.language, text);
 
   if (!care.ready) {
     return (
@@ -69,7 +71,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 key={link.href}
               >
                 <Icon />
-                {link.label}
+                {t(link.label)}
               </Link>
             );
           })}
@@ -80,7 +82,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             href="/help"
           >
             <IconHelp />
-            Help
+            {t("Help")}
           </Link>
           <div className={styles.userWrap}>
             <button
@@ -105,7 +107,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               <div className={styles.userMenu}>
                 <p>{care.user.email}</p>
                 <form action={signOutUser}>
-                  <button type="submit">Sign out</button>
+                  <button type="submit">{t("Sign out")}</button>
                 </form>
               </div>
             ) : null}
@@ -115,13 +117,13 @@ export function AppShell({ children }: { children: ReactNode }) {
       <div className={styles.main}>
         <div className={styles.topbar}>
           <LanguageMenu
-            onChange={(language) => care.updateProfile({ language })}
+            onChange={(language) => void care.setLanguage(language)}
             value={care.profile.language || "English"}
           />
           <div className={styles.noticeWrap}>
             <button
               aria-expanded={noticesOpen}
-              aria-label="Notifications"
+              aria-label={t("Notifications")}
               className={styles.bellButton}
               onClick={() => {
                 setNoticesOpen((open) => !open);
@@ -134,7 +136,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             </button>
             {noticesOpen ? (
               <div className={styles.noticePanel}>
-                <strong>Updates</strong>
+                <strong>{t("Updates")}</strong>
                 <ul>
                   {care.notices.map((notice) => (
                     <li key={notice.id}>

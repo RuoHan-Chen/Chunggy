@@ -5,7 +5,7 @@ import { declineResult, formatRetrievedCall, isDeclinedCall } from "@/lib/carewa
 import { ConfigurationError } from "@/lib/env";
 import { digits, parseDob, type Appointment, type BookingStep, type CallDraft, type CareSaveResult, type ChatContextItem, type ChatProvider, type ChatSession, type Preferences, type Profile, type SavedCareRequest } from "@/lib/careway/model";
 import { cancelSavedAppointment, findBookingCallTarget, requestSavedAppointment } from "@/server/database/repositories/appointments";
-import { saveOfficeOutreach, saveVapiAppointmentOptions, syncCareRequest, updateOfficeOutreach } from "@/server/database/repositories/care-requests";
+import { findCareRequest, saveOfficeOutreach, saveVapiAppointmentOptions, syncCareRequest, updateOfficeOutreach } from "@/server/database/repositories/care-requests";
 import { createVapiDoctorCall, getVapiCall, VapiApiError } from "@/server/vapi/client";
 import { normalizeDoctorCallResult } from "@/server/vapi/doctor-call-result";
 import {
@@ -443,7 +443,7 @@ export async function placeOfficeCallAction(input: {
   reason: string;
   declineCount: number;
   simulate?: boolean;
-}): Promise<{ ok: boolean; message: string; reply: string; callDraft: CallDraft }> {
+}): Promise<{ ok: boolean; message: string; reply: string; callDraft: CallDraft; saved?: SavedCareRequest }> {
   const failed = (message: string, draft: CallDraft) => ({ ok: false, message, reply: message, callDraft: draft });
   let baseDraft: CallDraft = {
     workflow: "review",
@@ -529,11 +529,13 @@ export async function placeOfficeCallAction(input: {
         summary: "Simulated call completed; office not contacted.",
         resultJson: JSON.stringify(result),
       });
+      const refreshedRequest = await findCareRequest(user.userId, saved.requestId);
       return {
         ok: true,
         message: "The fake demo call finished.",
         reply,
         callDraft: { ...baseDraft, workflow: "completed", resultText: reply, result },
+        saved: refreshedRequest,
       };
     }
 
@@ -629,11 +631,13 @@ export async function placeOfficeCallAction(input: {
         summary: (structuredSummary ?? transcript ?? `Vapi call completed: ${call.status}`).slice(0, 500),
         resultJson: structuredSummary,
       });
+      const refreshedRequest = await findCareRequest(user.userId, saved.requestId);
       return {
         ok: true,
         message: "The doctor-office call finished.",
         reply,
         callDraft: { ...baseDraft, workflow: "completed", resultText: reply, result },
+        saved: refreshedRequest,
       };
     } catch (error) {
       const detail = error instanceof ConfigurationError

@@ -217,6 +217,7 @@ export function Onboarding() {
                     >
                       <option>English</option>
                       <option>Spanish</option>
+                      <option>Chinese</option>
                     </select>
                     <span>We’ll ask for your full address when you book.</span>
                   </label>
