@@ -4,7 +4,7 @@ import { auth } from "@/auth";
 import { declineResult, formatRetrievedCall, isDeclinedCall } from "@/lib/careway/call-flow";
 import { ConfigurationError } from "@/lib/env";
 import { digits, parseDob, type Appointment, type BookingStep, type CallDraft, type CareSaveResult, type ChatContextItem, type ChatProvider, type ChatSession, type Preferences, type Profile, type SavedCareRequest } from "@/lib/careway/model";
-import { cancelSavedAppointment, findBookingCallTarget, requestSavedAppointment } from "@/server/database/repositories/appointments";
+import { cancelSavedAppointment, findBookingCallTarget, findShownAppointmentOption, requestSavedAppointment } from "@/server/database/repositories/appointments";
 import { findCareRequest, saveOfficeOutreach, saveVapiAppointmentOptions, syncCareRequest, updateOfficeOutreach } from "@/server/database/repositories/care-requests";
 import { createVapiDoctorCall, getVapiCall, VapiApiError } from "@/server/vapi/client";
 import { normalizeDoctorCallResult, resolveAppointmentTimeLabel } from "@/server/vapi/doctor-call-result";
@@ -127,12 +127,24 @@ const optionIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-
 
 export async function requestAppointmentAction(input: {
   optionId: string;
+  requestId?: string;
+  locationId?: string;
+  startIso?: string;
   shareSms: boolean;
   callMode: "real" | "fake";
 }): Promise<CareSaveResult & { appointment: Appointment | null }> {
   try {
     const user = await authenticatedUser();
-    if (!optionIdPattern.test(input.optionId)) {
+    const currentOption = input.requestId && input.locationId && input.startIso
+      ? await findShownAppointmentOption({
+          userId: user.userId,
+          requestId: input.requestId,
+          locationId: input.locationId,
+          startIso: input.startIso,
+        })
+      : null;
+    const optionId = currentOption?.optionId ?? input.optionId;
+    if (!optionIdPattern.test(optionId)) {
       return { ok: false, persisted: false, appointment: null, message: "Choose a time from the saved shortlist." };
     }
     const [profile, policies] = await Promise.all([
@@ -157,7 +169,7 @@ export async function requestAppointmentAction(input: {
         return { ok: false, persisted: false, appointment: null, message: "Enter the insurer, member ID, and plan name before requesting this visit." };
       }
     }
-    const target = await findBookingCallTarget(user.userId, input.optionId);
+    const target = await findBookingCallTarget(user.userId, optionId);
     if (!target) {
       return { ok: false, persisted: false, appointment: null, message: "That appointment time is no longer available. Choose another time." };
     }
@@ -242,7 +254,7 @@ export async function requestAppointmentAction(input: {
     }
     const appointment = await requestSavedAppointment({
       userId: user.userId,
-      optionId: input.optionId,
+      optionId,
       shareSms: input.shareSms,
       callMode: input.callMode,
     });
@@ -454,11 +466,24 @@ export async function prepareReturnedTimeAction(input: {
   if (!returnedTime) return { ok: false as const, message: "That returned time is no longer available." };
   const startIso = returnedTime.startIso ?? resolveAppointmentTimeLabel(returnedTime.label);
   if (!startIso) return { ok: false as const, message: "The office did not provide enough detail to book that time." };
+  const existing = await findShownAppointmentOption({
+    userId: user.userId,
+    requestId: input.requestId,
+    locationId: input.locationId,
+    startIso,
+  });
+  if (existing) {
+    return {
+      ok: true as const,
+      option: { ...existing, label: returnedTime.label },
+    };
+  }
   const saved = await saveVapiAppointmentOptions({
     userId: user.userId,
     requestId: input.requestId,
     locationId: input.locationId,
     times: [{ label: returnedTime.label, startIso, endIso: returnedTime.endIso }],
+    replaceExisting: false,
   });
   const option = saved[0];
   if (!option) return { ok: false as const, message: "That returned time could not be saved." };

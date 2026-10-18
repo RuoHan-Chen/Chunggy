@@ -829,7 +829,14 @@ export function CareProvider({ user, initialData, children }: { user: CareUser; 
         }
         setSaving(true);
         try {
-          const result = await requestAppointmentAction({ optionId: snapshot.draft.id, shareSms, callMode });
+          const result = await requestAppointmentAction({
+            optionId: snapshot.draft.id,
+            requestId: savedCareRequest?.requestId,
+            locationId: snapshot.draft.locationId,
+            startIso: snapshot.draft.startIso,
+            shareSms,
+            callMode,
+          });
           if (result.appointment) remember(result.appointment);
           return result;
         } finally {

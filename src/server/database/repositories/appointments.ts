@@ -233,6 +233,49 @@ export async function findBookingCallTarget(userId: string, optionId: string) {
   });
 }
 
+export async function findShownAppointmentOption(input: {
+  userId: string;
+  requestId: string;
+  locationId: string;
+  startIso: string;
+}) {
+  const start = new Date(input.startIso);
+  if (!Number.isFinite(start.getTime())) return null;
+  return withTransaction(async (connection) => {
+    const result = await connection.execute<{
+      optionId: string;
+      offeredStart: Date;
+      offeredEnd: Date | null;
+    }>(
+      `SELECT option_row.OPTION_ID AS "optionId",
+              option_row.OFFERED_START AS "offeredStart",
+              option_row.OFFERED_END AS "offeredEnd"
+       FROM APPOINTMENT_OPTIONS option_row
+       JOIN CARE_REQUESTS request ON request.REQUEST_ID = option_row.REQUEST_ID
+       WHERE option_row.REQUEST_ID = :requestId
+         AND option_row.LOCATION_ID = :locationId
+         AND option_row.OFFERED_START = :offeredStart
+         AND option_row.STATUS = 'SHOWN'
+         AND request.USER_ID = :userId
+       ORDER BY option_row.UPDATED_AT DESC
+       FETCH FIRST 1 ROW ONLY`,
+      {
+        requestId: input.requestId,
+        locationId: input.locationId,
+        offeredStart: start,
+        userId: input.userId,
+      },
+      { outFormat: oracledb.OUT_FORMAT_OBJECT },
+    );
+    const option = result.rows?.[0];
+    return option ? {
+      optionId: option.optionId,
+      startIso: new Date(option.offeredStart).toISOString(),
+      endIso: option.offeredEnd ? new Date(option.offeredEnd).toISOString() : null,
+    } : null;
+  });
+}
+
 export async function cancelSavedAppointment(userId: string, appointmentId: string) {
   return withTransaction(async (connection) => {
     const updated = await connection.execute(

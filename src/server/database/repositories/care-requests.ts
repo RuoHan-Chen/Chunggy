@@ -439,6 +439,7 @@ export async function saveVapiAppointmentOptions(input: {
   locationId: string;
   times: Array<{ label: string; startIso: string | null; endIso: string | null }>;
   source?: "VAPI" | "DEMO";
+  replaceExisting?: boolean;
 }) {
   const sourceName = input.source ?? "VAPI";
   return withTransaction(async (connection) => {
@@ -472,15 +473,17 @@ export async function saveVapiAppointmentOptions(input: {
     const row = source.rows?.[0];
     if (!row) throw new Error("The selected office is not linked to this care request.");
 
-    await connection.execute(
-      `UPDATE APPOINTMENT_OPTIONS
-       SET STATUS = 'REPLACED', UPDATED_AT = SYSTIMESTAMP
-       WHERE REQUEST_ID = :requestId
-         AND LOCATION_ID = :locationId
-         AND SOURCE = :sourceName
-         AND STATUS = 'SHOWN'`,
-      { requestId: input.requestId, locationId: input.locationId, sourceName },
-    );
+    if (input.replaceExisting !== false) {
+      await connection.execute(
+        `UPDATE APPOINTMENT_OPTIONS
+         SET STATUS = 'REPLACED', UPDATED_AT = SYSTIMESTAMP
+         WHERE REQUEST_ID = :requestId
+           AND LOCATION_ID = :locationId
+           AND SOURCE = :sourceName
+           AND STATUS = 'SHOWN'`,
+        { requestId: input.requestId, locationId: input.locationId, sourceName },
+      );
+    }
 
     const saved: Array<{ optionId: string; label: string; startIso: string; endIso: string | null }> = [];
     for (const time of input.times) {
