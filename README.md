@@ -15,6 +15,11 @@ Chunggy is a Next.js application foundation for Oracle Database, Google authenti
 - [x] Authenticated OCI Generative AI chatbot route
 - [x] Integration readiness health endpoint
 - [x] Oracle credentials and live connection verification
+- [x] Versioned, idempotent Oracle migration runner
+- [x] Phase 0 user, profile, insurance, appointment-type, and provider schema
+- [x] Seeded provider catalog and database verification command
+- [x] Server-only repositories with runtime input validation
+- [x] Vitest unit tests and Playwright API smoke-test setup
 - [ ] Google OAuth sign-in verification
 - [ ] OpenAI API key and live request verification
 - [ ] Oracle-backed user and conversation persistence
@@ -28,6 +33,8 @@ Use Node.js 22.13 or newer.
 nvm use
 npm install
 cp .env.example .env.local
+npm run db:migrate
+npm run db:verify
 npm run dev
 ```
 
@@ -81,12 +88,30 @@ The OpenAI client is initialized only when it is first used, so missing API keys
 
 The OCI route uses Oracle's official SDK with an OCI config-file profile locally and instance-principal authentication on an OCI VM. It does not use a Generative AI Project API key.
 
+## Database development
+
+Run migrations after pulling a change that adds or updates the application schema:
+
+```bash
+npm run db:migrate
+npm run db:verify
+```
+
+`db:migrate` records applied versions in `SCHEMA_MIGRATIONS` and is safe to run repeatedly. Phase 0 creates `APP_USERS`, `PATIENT_PROFILES`, `INSURANCE_POLICIES`, `APPOINTMENT_TYPES`, `PROVIDER_LOCATIONS`, and `PROVIDER_SERVICES`. Insurance-card files are intentionally not stored; manually entered policy fields are the only database input.
+
+Run automated checks with:
+
+```bash
+npm test
+npm run test:e2e
+```
+
 ## Next implementation steps
 
 1. Complete a Google sign-in and verify the authenticated dashboard.
 2. Create a least-privilege Oracle application user for deployment.
-3. Add `USERS`, `CONVERSATIONS`, and `MESSAGES` migrations.
-4. Add a chat interface for the authenticated OCI Generative AI route.
+3. Connect Google identities to `APP_USERS` and persist onboarding data.
+4. Add `CONVERSATIONS` and `MESSAGES` migrations.
 5. Save and retrieve per-user conversation history.
 
 ## References

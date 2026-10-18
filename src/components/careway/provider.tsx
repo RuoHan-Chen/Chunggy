@@ -106,8 +106,9 @@ function loadSnapshot(email: string, name: string): CareSnapshot {
 }
 
 const memory = new Map<string, CareSnapshot>();
-const clientViews = new Map<string, { ready: true; snapshot: CareSnapshot }>();
-const serverViews = new Map<string, { ready: false; snapshot: CareSnapshot }>();
+type CareView = { ready: boolean; snapshot: CareSnapshot };
+const clientViews = new Map<string, CareView>();
+const serverViews = new Map<string, CareView>();
 const listeners = new Set<() => void>();
 
 function subscribe(listener: () => void) {
@@ -124,7 +125,7 @@ function readStored(email: string, name: string) {
   return loaded;
 }
 
-function clientView(email: string, name: string) {
+function clientView(email: string, name: string): CareView {
   const key = storageKey(email);
   const snapshot = readStored(email, name);
   const existing = clientViews.get(key);
@@ -134,7 +135,7 @@ function clientView(email: string, name: string) {
   return view;
 }
 
-function serverView(name: string) {
+function serverView(name: string): CareView {
   const key = name || "guest";
   const existing = serverViews.get(key);
   if (existing) return existing;
