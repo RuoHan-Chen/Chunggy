@@ -4,22 +4,22 @@
   place-items: center;
   padding: 32px;
   background:
-    radial-gradient(circle at top left, #e9f5ff 0, transparent 36%),
-    #f7f8fa;
+    radial-gradient(circle at top left, #f4f8f7 0, transparent 36%),
+    #ffffff;
 }
 
 .card {
   width: min(720px, 100%);
   padding: clamp(32px, 7vw, 64px);
-  border: 1px solid #dfe4ea;
-  border-radius: 24px;
+  border: 1px solid #d4e2dd;
+  border-radius: 14px;
   background: rgba(255, 255, 255, 0.92);
-  box-shadow: 0 24px 80px rgba(20, 38, 63, 0.1);
+  box-shadow: 0 8px 24px rgba(29, 67, 57, 0.06);
 }
 
 .eyebrow {
   margin-bottom: 16px;
-  color: #2f6bff;
+  color: #347866;
   font-size: 0.78rem;
   font-weight: 750;
   letter-spacing: 0.12em;
@@ -28,7 +28,7 @@
 
 .card h1 {
   max-width: 560px;
-  color: #152033;
+  color: #1d4339;
   font-size: clamp(2.25rem, 6vw, 4.25rem);
   line-height: 1.02;
   letter-spacing: -0.055em;
@@ -36,14 +36,14 @@
 
 .summary {
   margin-top: 24px;
-  color: #536176;
+  color: #5a5a5a;
   font-size: 1.05rem;
   line-height: 1.7;
 }
 
 .statusList {
-  margin-top: 36px;
-  border-top: 1px solid #e6e9ee;
+  margin-top: 32px;
+  border-top: 1px solid #d4e2dd;
 }
 
 .statusRow {
@@ -51,30 +51,30 @@
   gap: 24px;
   justify-content: space-between;
   padding: 16px 0;
-  border-bottom: 1px solid #e6e9ee;
+  border-bottom: 1px solid #d4e2dd;
 }
 
 .statusRow dt {
-  color: #26344a;
+  color: #1d4339;
   font-weight: 650;
 }
 
 .statusRow dd {
-  color: #68758a;
+  color: #5a5a5a;
   text-align: right;
 }
 
 .hint {
-  margin-top: 28px;
-  color: #536176;
+  margin-top: 32px;
+  color: #5a5a5a;
   line-height: 1.6;
 }
 
 .hint code {
-  padding: 3px 7px;
+  padding: 4px 8px;
   border-radius: 6px;
-  color: #234dba;
-  background: #edf3ff;
+  color: #347866;
+  background: #f4f8f7;
 }
 
 @media (max-width: 560px) {
@@ -85,7 +85,7 @@
   .statusRow {
     align-items: flex-start;
     flex-direction: column;
-    gap: 6px;
+    gap: 8px;
   }
 
   .statusRow dd {

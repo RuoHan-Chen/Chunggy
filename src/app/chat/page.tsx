@@ -19,7 +19,7 @@ export default function ChatPage() {
 function ChatLoading() {
   return (
     <main className={styles.dashboardPage}>
-      <section className={styles.dashboardShell}>
+      <section className={styles.dashboardShellWide}>
         <div className={styles.loadingCard}>Loading the test chat…</div>
       </section>
     </main>
@@ -52,7 +52,7 @@ async function ChatGate() {
 
   return (
     <main className={styles.dashboardPage}>
-      <section className={styles.dashboardShell}>
+      <section className={styles.dashboardShellWide}>
         <header className={styles.dashboardHeader}>
           <div className={styles.wordmark}>
             <span>C</span>
