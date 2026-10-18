@@ -38,7 +38,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const care = useCare();
   const [menuOpen, setMenuOpen] = useState(false);
   const [noticesOpen, setNoticesOpen] = useState(false);
-  const displayName = care.profile.fullName || care.user.name || "Chunggy member";
+  const displayName = care.profile.fullName || care.user.name || "Assurance member";
   const unread = care.notices.some((notice) => !notice.read);
 
   useEffect(() => {
@@ -53,7 +53,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <div className={styles.loadingScreen}>
         <div className={styles.loadingSidebar} />
         <div className={styles.loadingMain}>
-          <p>Loading Chunggy…</p>
+          <p>Loading Assurance…</p>
         </div>
       </div>
     );
@@ -63,7 +63,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     <div className={styles.shell}>
       <aside className={styles.sidebar}>
         <Link className={styles.brand} href="/home">
-          Chunggy
+          Assurance
         </Link>
         <nav className={styles.nav} aria-label="Primary">
           {links.map((link) => {

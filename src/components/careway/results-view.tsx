@@ -11,9 +11,13 @@ import styles from "@/components/careway/careway.module.css";
 export function ResultsView() {
   const care = useCare();
   const router = useRouter();
-  const slots = care.providerSlots.filter(
-    (slot) => slot.visitType === care.preferences.visitType,
-  );
+  const saved = care.savedCareRequest;
+  const slots = saved
+    ? saved.options
+    : care.providerSlots.filter((slot) => slot.visitType === care.preferences.visitType);
+  const summary = saved
+    ? `${saved.visitType} · Near ${saved.postalCode ?? "your ZIP"} within ${saved.radiusMiles} miles · ${saved.timePreference ?? "any time"}`
+    : `${care.preferences.visitType} · ${care.preferences.location} · ${care.preferences.preferredTimes}`;
 
   function choose(slot: Slot) {
     care.selectSlot(slot);
@@ -29,25 +33,22 @@ export function ResultsView() {
       </p>
       <header className={styles.pageIntro}>
         <h1>Choose a time</h1>
-        <p>
-          {care.preferences.visitType} · {care.preferences.location} ·{" "}
-          {care.preferences.preferredTimes}
-        </p>
+        <p>{summary}</p>
+        <p>{saved ? "Saved shortlist from Oracle." : "These options are not saved yet."}</p>
       </header>
       <div className={styles.stackWide}>
         {slots.length === 0 ? (
           <section className={styles.card}>
             <h2>No provider listings yet</h2>
-            <p>Oracle does not currently have an active {care.preferences.visitType} provider.</p>
+            <p>No providers matched {saved?.visitType ?? care.preferences.visitType} with the current filters.</p>
           </section>
         ) : null}
         {slots.map((slot) => {
+          const timePreference = saved?.timePreference ?? care.preferences.preferredTimes;
           const matches =
-            care.preferences.preferredTimes === "Flexible" ||
-            (care.preferences.preferredTimes === "Weekday mornings" &&
-              slot.period === "morning") ||
-            (care.preferences.preferredTimes === "Weekday afternoons" &&
-              slot.period === "afternoon");
+            timePreference === "Flexible" ||
+            (timePreference === "Weekday mornings" && slot.period === "morning") ||
+            (timePreference === "Weekday afternoons" && slot.period === "afternoon");
           return (
             <article className={styles.resultCard} key={slot.id}>
               <div className={styles.resultMain}>

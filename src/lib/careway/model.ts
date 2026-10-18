@@ -49,15 +49,59 @@ export type Slot = {
   endIso: string;
 };
 
+export type AppointmentStatus = "requested" | "confirmed" | "failed" | "cancelled" | "simulated";
+
 export type Appointment = Slot & {
-  status: "confirmed" | "cancelled";
+  appointmentId: string | null;
+  status: AppointmentStatus;
+  simulated: boolean;
 };
+
+export function isOpenAppointment(status: AppointmentStatus) {
+  return status === "simulated" || status === "requested" || status === "confirmed";
+}
 
 export type ChatMessage = {
   id: string;
   role: "user" | "assistant";
   text: string;
   time: string;
+  provider?: ChatProvider;
+  model?: string;
+};
+
+export type ChatProvider = "openai" | "oci";
+
+export type ChatContextItem = {
+  id: string;
+  kind: "appointment" | "conversation" | "care_request";
+  title: string;
+  body: string;
+};
+
+export type SavedCareRequest = {
+  requestId: string;
+  visitType: string;
+  postalCode: string | null;
+  radiusMiles: number;
+  timePreference: string | null;
+  paymentPreference: "INSURANCE" | "SELF" | "LATER" | null;
+  status: string;
+  options: Slot[];
+};
+
+export type ChatSession = {
+  id: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+  messages: ChatMessage[];
+  bookingStep: BookingStep;
+  preferences: Preferences;
+  context: ChatContextItem[];
+  provider: ChatProvider;
+  pending: boolean;
+  error: string | null;
 };
 
 export type BookingStep = "idle" | "visit" | "location" | "time" | "payment" | "ready";
@@ -87,6 +131,8 @@ export type CareBootstrap = {
   snapshot: CareSnapshot;
   insurancePolicyId: string | null;
   providerSlots: Slot[];
+  savedCareRequest: SavedCareRequest | null;
+  appointments: Appointment[];
   message: string | null;
 };
 
@@ -189,6 +235,51 @@ export function seedMessages(): ChatMessage[] {
   ];
 }
 
+export function chatTitleFromMessage(text: string) {
+  const normalized = text.trim().replace(/\s+/g, " ");
+  if (!normalized) return "New chat";
+  const words = normalized.split(" ").slice(0, 7).join(" ");
+  return `${words}${normalized.length > words.length ? "…" : ""}`;
+}
+
+export function chatFromSnapshot(snapshot: CareSnapshot, id = "chat-initial"): ChatSession {
+  const firstUserMessage = snapshot.messages.find((message) => message.role === "user")?.text ?? "";
+  return {
+    id,
+    title: chatTitleFromMessage(firstUserMessage),
+    createdAt: "",
+    updatedAt: "",
+    messages: snapshot.messages,
+    bookingStep: snapshot.bookingStep ?? inferBookingStep(snapshot.messages),
+    preferences: snapshot.preferences,
+    context: [],
+    provider: "oci",
+    pending: false,
+    error: null,
+  };
+}
+
+export function emptyChatSession(profile: Profile, id: string): ChatSession {
+  const timestamp = new Date().toISOString();
+  return {
+    id,
+    title: "New chat",
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    messages: [],
+    bookingStep: "idle",
+    preferences: {
+      ...defaultPreferences(),
+      location: locationLabel(profile.zip),
+      paymentLabel: paymentLabel(profile.payment),
+    },
+    context: [],
+    provider: "oci",
+    pending: false,
+    error: null,
+  };
+}
+
 export function defaultSnapshot(name = ""): CareSnapshot {
   return {
     version: 2,
@@ -201,7 +292,7 @@ export function defaultSnapshot(name = ""): CareSnapshot {
     notices: [
       {
         id: "welcome",
-        title: "Welcome to Chunggy",
+        title: "Welcome to Assurance",
         body: "Add your phone number so offices can reach you about a visit.",
         read: false,
       },
@@ -728,15 +819,15 @@ export function toIcs(appointment: Appointment, name: string) {
   return [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
-    "PRODID:-//Chunggy//Appointments//EN",
+    "PRODID:-//Assurance//Appointments//EN",
     "BEGIN:VEVENT",
-    `UID:${appointment.reference}@chunggy.local`,
+    `UID:${appointment.reference}@assurance.local`,
     `DTSTAMP:${stamp}`,
     `DTSTART:${appointment.startIso}`,
     `DTEND:${appointment.endIso}`,
     `SUMMARY:${appointment.visitType} at ${appointment.provider}`,
     `LOCATION:${appointment.address}, ${appointment.cityLine}`,
-    `DESCRIPTION:Appointment for ${name}. Reference ${appointment.reference}.`,
+    `DESCRIPTION:${appointment.simulated ? "Simulated appointment request" : "Appointment"} for ${name}. Reference ${appointment.reference}.`,
     "END:VEVENT",
     "END:VCALENDAR",
   ].join("\r\n");

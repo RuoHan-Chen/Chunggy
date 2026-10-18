@@ -11,8 +11,8 @@ const sans = Plus_Jakarta_Sans({
 
 export const metadata: Metadata = {
   title: {
-    default: "Chunggy",
-    template: "%s · Chunggy",
+    default: "Assurance",
+    template: "%s · Assurance",
   },
   description: "Find and book care with a little help.",
 };

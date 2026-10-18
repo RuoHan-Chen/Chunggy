@@ -133,7 +133,7 @@ function DashboardHeader({
     <header className={styles.dashboardHeader}>
       <div className={styles.wordmark}>
         <span>C</span>
-        Chunggy
+        Assurance
       </div>
       <nav className={styles.headerNav}>
         <Link href="/chat">Test chat</Link>

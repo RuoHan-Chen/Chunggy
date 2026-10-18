@@ -35,7 +35,7 @@ export function Onboarding() {
   if (!care.ready) {
     return (
       <div className={styles.loadingPlain}>
-        <p>Loading Chunggy…</p>
+        <p>Loading Assurance…</p>
       </div>
     );
   }
@@ -423,7 +423,7 @@ export function Onboarding() {
           <>
             <header className={styles.pageIntro}>
               <h1>Review your details</h1>
-              <p>This is what Chunggy will use to find care. Offices only see it when you allow it.</p>
+              <p>This is what Assurance will use to find care. Offices only see it when you allow it.</p>
             </header>
             <div className={styles.split}>
               <div className={styles.stack}>
@@ -484,7 +484,7 @@ export function Onboarding() {
                 />
                 <SideItem
                   icon={<IconDoc />}
-                  text="Booking still asks before Chunggy shares your details with an office."
+                  text="Booking still asks before Assurance shares your details with an office."
                   title="Sharing is a separate yes"
                 />
               </aside>

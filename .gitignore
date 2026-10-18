@@ -23,3 +23,6 @@ test-results/
 playwright-report/
 coverage/
 
+# Local planning notes (intentionally excluded from PRs)
+/PROJECT_SCOPE_PLAN.md
+

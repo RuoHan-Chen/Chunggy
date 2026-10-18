@@ -75,11 +75,16 @@ export function getIntegrationStatus() {
       "AUTH_GOOGLE_ID",
       "AUTH_GOOGLE_SECRET",
     ]),
-    openai: isConfigured(["OPENAI_API_KEY"]),
+    openai: isConfigured(["OPENAI_API_KEY", "OPENAI_MODEL"]),
     oracleAi: isConfigured([
       "OCI_GENAI_REGION",
       "OCI_GENAI_COMPARTMENT_ID",
       "OCI_GENAI_MODEL_ID",
+    ]),
+    vapi: isConfigured([
+      "VAPI_PRIVATE_API_KEY",
+      "VAPI_ASSISTANT_ID",
+      "VAPI_INSURANCE_OUTPUT_ID",
     ]),
   };
 }
