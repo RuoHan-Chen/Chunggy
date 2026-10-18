@@ -47,6 +47,7 @@ const queries = {
                       FETCH FIRST 25 ROWS ONLY`,
   PROVIDER_LOCATIONS: `SELECT LOCATION_ID AS "locationId",
                               PROVIDER_NAME AS "provider",
+                              PHONE_E164 AS "phone",
                               CITY AS "city",
                               REGION AS "region",
                               POSTAL_CODE AS "postalCode",
@@ -65,6 +66,74 @@ const queries = {
                       FROM PROVIDER_SERVICES
                       ORDER BY LOCATION_ID, TYPE_ID
                       FETCH FIRST 25 ROWS ONLY`,
+  CONVERSATIONS: `SELECT CONVERSATION_ID AS "conversationId",
+                         USER_ID AS "userId",
+                         TITLE AS "title",
+                         AI_PROVIDER AS "provider",
+                         STATUS AS "status",
+                         BOOKING_STEP AS "bookingStep",
+                         TO_CHAR(UPDATED_AT, 'YYYY-MM-DD HH24:MI') AS "updatedAt"
+                  FROM CONVERSATIONS
+                  ORDER BY UPDATED_AT DESC
+                  FETCH FIRST 25 ROWS ONLY`,
+  MESSAGES: `SELECT MESSAGE_ID AS "messageId",
+                    CONVERSATION_ID AS "conversationId",
+                    POSITION AS "position",
+                    ROLE AS "role",
+                    REQUEST_STATUS AS "requestStatus",
+                    SUBSTR(CONTENT, 1, 160) AS "content",
+                    TO_CHAR(CREATED_AT, 'YYYY-MM-DD HH24:MI') AS "createdAt"
+             FROM MESSAGES
+             ORDER BY CREATED_AT DESC
+             FETCH FIRST 25 ROWS ONLY`,
+  CARE_REQUESTS: `SELECT request.REQUEST_ID AS "requestId",
+                         request.USER_ID AS "userId",
+                         appointment_type.SLUG AS "visitType",
+                         request.SEARCH_POSTAL_CODE AS "postalCode",
+                         request.SEARCH_RADIUS_MILES AS "radiusMiles",
+                         request.TIME_PREFERENCE AS "timePreference",
+                         request.PAYMENT_PREFERENCE AS "payment",
+                         request.STATUS AS "status",
+                         request.SOURCE_CONVERSATION_ID AS "conversationId",
+                         TO_CHAR(request.UPDATED_AT, 'YYYY-MM-DD HH24:MI') AS "updatedAt"
+                  FROM CARE_REQUESTS request
+                  JOIN APPOINTMENT_TYPES appointment_type ON appointment_type.TYPE_ID = request.TYPE_ID
+                  ORDER BY request.UPDATED_AT DESC
+                  FETCH FIRST 25 ROWS ONLY`,
+  APPOINTMENT_OPTIONS: `SELECT OPTION_ID AS "optionId",
+                               REQUEST_ID AS "requestId",
+                               LOCATION_ID AS "locationId",
+                               PROVIDER_NAME AS "provider",
+                               TO_CHAR(OFFERED_START, 'YYYY-MM-DD HH24:MI TZH:TZM') AS "offeredStart",
+                               ESTIMATE_MIN AS "estimateMin",
+                               ESTIMATE_MAX AS "estimateMax",
+                               SOURCE AS "source",
+                               STATUS AS "status"
+                        FROM APPOINTMENT_OPTIONS
+                        ORDER BY UPDATED_AT DESC
+                        FETCH FIRST 25 ROWS ONLY`,
+  APPOINTMENTS: `SELECT APPOINTMENT_ID AS "appointmentId",
+                        USER_ID AS "userId",
+                        REQUEST_ID AS "requestId",
+                        OPTION_ID AS "optionId",
+                        STATUS AS "status",
+                        CONFIRMATION_REFERENCE AS "reference",
+                        SIMULATED AS "simulated",
+                        TO_CHAR(UPDATED_AT, 'YYYY-MM-DD HH24:MI') AS "updatedAt"
+                 FROM APPOINTMENTS
+                 ORDER BY UPDATED_AT DESC
+                 FETCH FIRST 25 ROWS ONLY`,
+  OUTREACH_ATTEMPTS: `SELECT ATTEMPT_ID AS "attemptId",
+                             REQUEST_ID AS "requestId",
+                             CHANNEL AS "channel",
+                             DESTINATION AS "destination",
+                             STATUS AS "status",
+                             EXTERNAL_REFERENCE AS "externalReference",
+                             RESULT_SUMMARY AS "summary",
+                             TO_CHAR(CREATED_AT, 'YYYY-MM-DD HH24:MI') AS "createdAt"
+                      FROM OUTREACH_ATTEMPTS
+                      ORDER BY CREATED_AT DESC
+                      FETCH FIRST 25 ROWS ONLY`,
 } as const;
 
 const counts = {
@@ -74,6 +143,12 @@ const counts = {
   APPOINTMENT_TYPES: `SELECT COUNT(*) AS "count" FROM APPOINTMENT_TYPES`,
   PROVIDER_LOCATIONS: `SELECT COUNT(*) AS "count" FROM PROVIDER_LOCATIONS`,
   PROVIDER_SERVICES: `SELECT COUNT(*) AS "count" FROM PROVIDER_SERVICES`,
+  CONVERSATIONS: `SELECT COUNT(*) AS "count" FROM CONVERSATIONS`,
+  MESSAGES: `SELECT COUNT(*) AS "count" FROM MESSAGES`,
+  CARE_REQUESTS: `SELECT COUNT(*) AS "count" FROM CARE_REQUESTS`,
+  APPOINTMENT_OPTIONS: `SELECT COUNT(*) AS "count" FROM APPOINTMENT_OPTIONS`,
+  APPOINTMENTS: `SELECT COUNT(*) AS "count" FROM APPOINTMENTS`,
+  OUTREACH_ATTEMPTS: `SELECT COUNT(*) AS "count" FROM OUTREACH_ATTEMPTS`,
 } as const;
 
 export type FoundationTable = keyof typeof queries;
@@ -90,8 +165,14 @@ const columns: Record<FoundationTable, string[]> = {
   PATIENT_PROFILES: ["userId", "fullName", "phone", "dateOfBirth", "postalCode", "payment", "onboarding", "updatedAt"],
   INSURANCE_POLICIES: ["policyId", "userId", "payer", "plan", "memberId", "verification", "active", "updatedAt"],
   APPOINTMENT_TYPES: ["typeId", "slug", "displayName", "specialty", "durationMinutes", "active"],
-  PROVIDER_LOCATIONS: ["locationId", "provider", "city", "region", "postalCode", "rating", "active"],
+  PROVIDER_LOCATIONS: ["locationId", "provider", "phone", "city", "region", "postalCode", "rating", "active"],
   PROVIDER_SERVICES: ["locationId", "typeId", "durationMinutes", "selfPayMin", "selfPayMax", "currency", "active"],
+  CONVERSATIONS: ["conversationId", "userId", "title", "provider", "status", "bookingStep", "updatedAt"],
+  MESSAGES: ["messageId", "conversationId", "position", "role", "requestStatus", "content", "createdAt"],
+  CARE_REQUESTS: ["requestId", "userId", "visitType", "postalCode", "radiusMiles", "timePreference", "payment", "status", "conversationId", "updatedAt"],
+  APPOINTMENT_OPTIONS: ["optionId", "requestId", "locationId", "provider", "offeredStart", "estimateMin", "estimateMax", "source", "status"],
+  APPOINTMENTS: ["appointmentId", "userId", "requestId", "optionId", "status", "reference", "simulated", "updatedAt"],
+  OUTREACH_ATTEMPTS: ["attemptId", "requestId", "channel", "destination", "status", "externalReference", "summary", "createdAt"],
 };
 
 export async function readFoundationTables(): Promise<FoundationTablePreview[]> {

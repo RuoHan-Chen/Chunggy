@@ -6,15 +6,17 @@ import { useState } from "react";
 
 import { IconCalendar, IconCard, IconCheck, IconClock, IconPin, IconTooth, IconUser } from "@/components/careway/icons";
 import { useCare } from "@/components/careway/provider";
-import { bornLabel, digits, formatPhone, parseDob, paymentTitle } from "@/lib/careway/model";
+import { translate } from "@/lib/careway/i18n";
+import { bornLabel, digits, formatPhone, parseDob, paymentTitle, visitTypeLabel } from "@/lib/careway/model";
 import styles from "@/components/careway/careway.module.css";
 
 export function ReviewView() {
   const care = useCare();
+  const t = (text: string) => translate(care.profile.language, text);
   const router = useRouter();
   const [share, setShare] = useState(false);
   const [sms, setSms] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
+  const [submittingMode, setSubmittingMode] = useState<"real" | "fake" | null>(null);
   const [profileDirty, setProfileDirty] = useState(false);
   const [insuranceDirty, setInsuranceDirty] = useState(false);
   const [error, setError] = useState("");
@@ -29,8 +31,8 @@ export function ReviewView() {
   );
   const savedOption = care.savedCareRequest?.options.some((option) => option.id === slot?.id) ?? false;
 
-  async function confirm() {
-    if (!slot || submitting) return;
+  async function confirm(callMode: "real" | "fake") {
+    if (!slot || submittingMode) return;
     if (!nameReady) {
       setError("Add your name before requesting this visit.");
       return;
@@ -55,7 +57,7 @@ export function ReviewView() {
       setError("Choose a time from the saved shortlist.");
       return;
     }
-    setSubmitting(true);
+    setSubmittingMode(callMode);
     setError("");
     try {
       if (care.dataMode === "database" && profileDirty) {
@@ -72,14 +74,14 @@ export function ReviewView() {
           return;
         }
       }
-      const result = await care.requestAppointment(sms);
+      const result = await care.requestAppointment(sms, callMode);
       if (!result.ok) {
         setError(result.message);
         return;
       }
       router.push("/appointments/confirmed");
     } finally {
-      setSubmitting(false);
+      setSubmittingMode(null);
     }
   }
 
@@ -105,8 +107,8 @@ export function ReviewView() {
         Review
       </p>
       <header className={styles.pageIntro}>
-        <h1>Review before we book</h1>
-        <p>Confirm your saved details before a simulated request is stored. The office is not contacted.</p>
+        <h1>{t("Review before we book")}</h1>
+        <p>{t("Confirm your saved details, then choose a real Vapi booking call or a fake demo call.")}</p>
       </header>
       <ol className={styles.stepperLeft}>
         <li className={styles.stepDone}>
@@ -137,7 +139,7 @@ export function ReviewView() {
                 <IconTooth />
               </span>
               <div>
-                <strong>{slot.visitType}</strong>
+                <strong>{t(visitTypeLabel(slot.visitType))}</strong>
                 <p>{slot.provider}</p>
                 <p>
                   <IconCalendar /> {slot.dateLabel}
@@ -307,8 +309,8 @@ export function ReviewView() {
         </div>
 
         <aside className={styles.summaryCard}>
-          <h2>Booking summary</h2>
-          <strong>{slot.visitType}</strong>
+          <h2>{t("Booking summary")}</h2>
+          <strong>{t(visitTypeLabel(slot.visitType))}</strong>
           <p>{slot.provider}</p>
           <p>
             <IconCalendar /> {slot.dateLabel}
@@ -320,19 +322,22 @@ export function ReviewView() {
             <IconPin /> {slot.address}, {slot.cityLine}
           </p>
           <hr />
-          <h3>Patient</h3>
+          <h3>{t("Patient")}</h3>
           <p>{name}</p>
           <p>{bornLabel(care.profile.dateOfBirth)}</p>
           <p>{phoneReady ? care.profile.phone : "Add a phone number"}</p>
           <hr />
-          <h3>Payment</h3>
+          <h3>{t("Payment")}</h3>
           <p>{paymentTitle(care.profile.payment)}</p>
           <p>Estimated visit cost {slot.estimate}</p>
           <p>Network status unknown.</p>
-          <button className={styles.btnPrimaryWide} disabled={submitting || care.saving} onClick={confirm} type="button">
-            {submitting || care.saving ? "Saving request…" : "Confirm and request booking"}
+          <button className={styles.btnPrimaryWide} disabled={Boolean(submittingMode) || care.saving} onClick={() => confirm("real")} type="button">
+            {submittingMode === "real" ? t("Calling office…") : t("Confirm with real Vapi call")}
           </button>
-          <p className={styles.fine}>This stores a simulated request. The office is not contacted, and the visit is not booked.</p>
+          <button className={styles.btnOutlineWide} disabled={Boolean(submittingMode) || care.saving} onClick={() => confirm("fake")} type="button">
+            {submittingMode === "fake" ? t("Running fake call…") : t("Confirm with fake demo call")}
+          </button>
+          <p className={styles.fine}>{t("The real option calls the displayed office number. The fake option never contacts the office. A request is not booked until the office confirms it.")}</p>
         </aside>
       </div>
 

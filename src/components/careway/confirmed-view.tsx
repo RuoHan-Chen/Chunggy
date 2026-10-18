@@ -12,7 +12,7 @@ import {
   IconPin,
 } from "@/components/careway/icons";
 import { useCare } from "@/components/careway/provider";
-import { firstName, mapsUrl, toIcs } from "@/lib/careway/model";
+import { firstName, mapsUrl, toIcs, visitTypeLabel } from "@/lib/careway/model";
 import styles from "@/components/careway/careway.module.css";
 
 export function ConfirmedView() {
@@ -38,7 +38,14 @@ export function ConfirmedView() {
 
   const cancelled = appointment.status === "cancelled";
   const officeConfirmed = appointment.status === "confirmed" && appointment.simulated === false;
-  const statusLabel = cancelled ? "Cancelled" : officeConfirmed ? "Confirmed by office" : "Simulated request";
+  const realRequest = appointment.simulated === false;
+  const statusLabel = cancelled
+    ? "Cancelled"
+    : officeConfirmed
+      ? "Confirmed by office"
+      : realRequest
+        ? "Requested from office"
+        : "Simulated request";
 
   function downloadCalendar() {
     const file = new Blob([toIcs(appointment!, care.profile.fullName || name)], {
@@ -65,7 +72,9 @@ export function ConfirmedView() {
               ? "This request is cancelled. The office was not contacted."
               : officeConfirmed
                 ? "The office confirmed this visit."
-                : `This is a simulated request${appointment.appointmentId ? " stored in Oracle" : " for this session only"}. No office was contacted, and insurance eligibility was not checked.`}
+                : realRequest
+                  ? "The Vapi booking call finished and the request was saved. The visit is not booked until the office confirms it."
+                  : `This is a simulated request${appointment.appointmentId ? " stored in Oracle" : " for this session only"}. No office was contacted, and insurance eligibility was not checked.`}
           </p>
         </div>
       </header>
@@ -75,7 +84,7 @@ export function ConfirmedView() {
           <span className={cancelled ? styles.badgeMuted : styles.badge}>
             <IconCheck size={14} /> {statusLabel}
           </span>
-          <h2>{appointment.visitType}</h2>
+          <h2>{visitTypeLabel(appointment.visitType)}</h2>
           <p className={styles.provider}>{appointment.provider}</p>
           <ul className={styles.detailList}>
             <li>
@@ -150,7 +159,7 @@ export function ConfirmedView() {
           <p className={styles.kicker}>Estimated cost (not final)</p>
           <p className={styles.price}>{appointment.estimate}</p>
           <p className={styles.fine}>
-            This is an estimate based on typical self-pay rates for a routine {appointment.visitType.toLowerCase()}.
+            This is an estimate based on typical self-pay rates for a routine {visitTypeLabel(appointment.visitType).toLowerCase()}.
             The final cost may vary.
           </p>
         </section>

@@ -4,11 +4,13 @@ import Link from "next/link";
 
 import { IconCalendar, IconPin } from "@/components/careway/icons";
 import { useCare } from "@/components/careway/provider";
-import { isOpenAppointment } from "@/lib/careway/model";
+import { translate } from "@/lib/careway/i18n";
+import { isOpenAppointment, visitTypeLabel } from "@/lib/careway/model";
 import styles from "@/components/careway/careway.module.css";
 
 export function AppointmentsView() {
   const care = useCare();
+  const t = (text: string) => translate(care.profile.language, text);
   const history = care.appointments.length > 0 ? care.appointments : care.appointment ? [care.appointment] : [];
   const upcoming = history.filter((item) => isOpenAppointment(item.status));
   const cancelled = history.filter((item) => item.status === "cancelled");
@@ -16,16 +18,16 @@ export function AppointmentsView() {
   return (
     <div className={styles.page}>
       <header className={styles.pageIntro}>
-        <h1>Appointments</h1>
-        <p>Upcoming visits and anything you’ve cancelled.</p>
+        <h1>{t("Appointments")}</h1>
+        <p>{t("Upcoming visits and anything you’ve cancelled.")}</p>
       </header>
       <div className={styles.stackWide}>
         <section className={styles.card}>
-          <h2>Upcoming</h2>
+          <h2>{t("Upcoming")}</h2>
           {upcoming.length > 0 ? upcoming.map((item) => (
             <article className={styles.visitRow} key={item.appointmentId ?? item.reference}>
               <div>
-                <strong>{item.visitType}</strong>
+                <strong>{t(visitTypeLabel(item.visitType))}</strong>
                 <p>{item.provider}</p>
                 <p>{item.simulated ? "Simulated request · office not contacted" : item.status}</p>
                 <p>
@@ -40,35 +42,35 @@ export function AppointmentsView() {
                 href="/appointments/confirmed"
                 onClick={() => care.focusAppointment(item.appointmentId ?? item.reference)}
               >
-                View
+                {t("View")}
               </Link>
             </article>
           )) : (
             <div className={styles.empty}>
-              <p>No upcoming visits.</p>
+              <p>{t("No upcoming visits.")}</p>
               <Link className={styles.btnPrimary} href="/assistant">
-                Find a visit
+                {t("Find a visit")}
               </Link>
             </div>
           )}
         </section>
         <section className={styles.card}>
-          <h2>Cancelled</h2>
+          <h2>{t("Cancelled")}</h2>
           {cancelled.length > 0 ? cancelled.map((item) => (
             <article className={styles.visitRow} key={item.appointmentId ?? item.reference}>
               <div>
-                <strong>{item.visitType}</strong>
+                <strong>{t(visitTypeLabel(item.visitType))}</strong>
                 <p>
                   {item.provider} · {item.dateLabel}
                 </p>
                 <p>Cancelled · office not contacted</p>
               </div>
               <Link className={styles.btnOutline} href="/appointments/results">
-                Book again
+                {t("Book again")}
               </Link>
             </article>
           )) : (
-            <p className={styles.cardLede}>Cancelled visits will show up here.</p>
+            <p className={styles.cardLede}>{t("Cancelled visits will show up here.")}</p>
           )}
         </section>
       </div>

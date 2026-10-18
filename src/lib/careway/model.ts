@@ -31,6 +31,7 @@ export type Preferences = {
 
 export type Slot = {
   id: string;
+  locationId?: string;
   visitType: string;
   provider: string;
   dateLabel: string;
@@ -44,6 +45,7 @@ export type Slot = {
   estimate: string;
   distance: string;
   rating: string;
+  phone?: string;
   period: "morning" | "afternoon";
   startIso: string;
   endIso: string;
@@ -68,9 +70,34 @@ export type ChatMessage = {
   time: string;
   provider?: ChatProvider;
   model?: string;
+  status?: "complete" | "failed";
+  error?: string | null;
 };
 
 export type ChatProvider = "openai" | "oci";
+
+export type CallWorkflow = "gathering" | "review" | "calling" | "completed" | "failed";
+
+export type ReturnedCallResult = {
+  availableTimes: Array<{ optionId: string; label: string; startIso: string | null; endIso: string | null }>;
+  estimatedCost: string | null;
+  insuranceResponse: string | null;
+  officeRequirements: string[];
+  followUpNotes: string | null;
+  summary: string;
+  savedForFollowUp: boolean;
+};
+
+export type CallDraft = {
+  workflow: CallWorkflow;
+  reason: string;
+  officeName: string;
+  officePhone: string;
+  locationId: string;
+  resultText: string;
+  declineCount: number;
+  result: ReturnedCallResult | null;
+};
 
 export type ChatContextItem = {
   id: string;
@@ -102,6 +129,10 @@ export type ChatSession = {
   provider: ChatProvider;
   pending: boolean;
   error: string | null;
+  callDraft: CallDraft;
+  stored: boolean;
+  messagesLoaded: boolean;
+  messageCount: number;
 };
 
 export type BookingStep = "idle" | "visit" | "location" | "time" | "payment" | "ready";
@@ -133,6 +164,7 @@ export type CareBootstrap = {
   providerSlots: Slot[];
   savedCareRequest: SavedCareRequest | null;
   appointments: Appointment[];
+  conversations: ChatSession[];
   message: string | null;
 };
 
@@ -145,13 +177,24 @@ export type CareSaveResult = {
 
 export const visitTypes = ["dental", "eye", "annual", "other"];
 
+const visitTypeLabels: Record<(typeof visitTypes)[number], string> = {
+  dental: "Dental visit",
+  eye: "Eye exam",
+  annual: "Annual physical",
+  other: "Other visit",
+};
+
+export function visitTypeLabel(visitType: string) {
+  return visitTypeLabels[visitType as (typeof visitTypes)[number]] ?? visitType;
+}
+
 export const timeChoices = [
   "Weekday mornings",
   "Weekday afternoons",
   "Flexible",
 ];
 
-export const languages = ["English", "Spanish"];
+export const languages = ["English", "Spanish", "Chinese"];
 
 export function paymentLabel(payment: PaymentChoice) {
   if (payment === "insurance") return "Insurance";
@@ -235,6 +278,14 @@ export function seedMessages(): ChatMessage[] {
   ];
 }
 
+export function chatFollowUpError(messages: ChatMessage[]) {
+  const last = messages.at(-1);
+  if (!last) return null;
+  if (last.status === "failed") return last.error || last.text;
+  if (last.role === "user") return "This request did not finish. You can retry it.";
+  return null;
+}
+
 export function chatTitleFromMessage(text: string) {
   const normalized = text.trim().replace(/\s+/g, " ");
   if (!normalized) return "New chat";
@@ -256,6 +307,10 @@ export function chatFromSnapshot(snapshot: CareSnapshot, id = "chat-initial"): C
     provider: "oci",
     pending: false,
     error: null,
+    callDraft: { workflow: "gathering", reason: "", officeName: "", officePhone: "", locationId: "", resultText: "", declineCount: 0, result: null },
+    stored: false,
+    messagesLoaded: true,
+    messageCount: snapshot.messages.length,
   };
 }
 
@@ -277,6 +332,10 @@ export function emptyChatSession(profile: Profile, id: string): ChatSession {
     provider: "oci",
     pending: false,
     error: null,
+    callDraft: { workflow: "gathering", reason: "", officeName: "", officePhone: "", locationId: "", resultText: "", declineCount: 0, result: null },
+    stored: false,
+    messagesLoaded: true,
+    messageCount: 0,
   };
 }
 
@@ -667,8 +726,22 @@ export function isLegacyBookingSeed(messages: ChatMessage[]) {
   return messages.length === 2 && messages[1]?.text === "I can help. What days work best for you?";
 }
 
-export function bookingChoices(step: BookingStep, zip: string) {
-  if (step === "visit") return visitTypes;
+export function bookingChoices(step: BookingStep, zip: string, language = "English") {
+  if (language === "Spanish") {
+    if (step === "visit") return ["Consulta dental", "Examen de la vista", "Examen físico anual", "Otra consulta"];
+    if (step === "location") return zip ? [`Usar ${zip}`] : [];
+    if (step === "time") return ["Mañanas entre semana", "Tardes entre semana", "Flexible"];
+    if (step === "payment") return ["Seguro", "Pago propio", "Decidir después"];
+    return [];
+  }
+  if (language === "Chinese") {
+    if (step === "visit") return ["牙科就诊", "眼科检查", "年度体检", "其他就诊"];
+    if (step === "location") return zip ? [`使用 ${zip}`] : [];
+    if (step === "time") return ["工作日上午", "工作日下午", "时间灵活"];
+    if (step === "payment") return ["保险", "自费", "稍后决定"];
+    return [];
+  }
+  if (step === "visit") return visitTypes.map(visitTypeLabel);
   if (step === "location") return zip ? [`Use ${zip}`] : [];
   if (step === "time") return timeChoices;
   if (step === "payment") return ["Insurance", "Self-pay", "Decide later"];
@@ -697,7 +770,7 @@ export function bookingTurn(
 
   if (step === "idle" && !fresh) {
     return {
-      reply: generalReply(text),
+      reply: generalReply(text, profile.language),
       step,
       preferences,
       zip: profile.zip,
@@ -713,7 +786,7 @@ export function bookingTurn(
     payment: !fresh && !restart && step === "ready",
   };
   const visitType = detectedVisit ?? (passed.visit ? preferences.visitType : "");
-  const zip = detectedZip ?? (passed.location ? profile.zip : "");
+  const zip = detectedZip ?? profile.zip;
   const preferredTimes = detectedTime ?? (passed.time ? preferences.preferredTimes : "");
   const nextPreferences: Preferences = {
     ...preferences,
@@ -732,7 +805,9 @@ export function bookingTurn(
   const advanced = next !== step || fresh;
   const payment = detectedPayment ?? profile.payment;
   return {
-    reply: advanced ? bookingReply(next, nextPreferences, zip, payment) : bookingNudge(step),
+    reply: advanced
+      ? bookingReply(next, nextPreferences, zip, payment, profile.language)
+      : bookingNudge(step, profile.language),
     step: next,
     preferences: {
       ...nextPreferences,
@@ -751,43 +826,87 @@ function nextBookingStep(known: { visit: boolean; location: boolean; time: boole
   return "ready";
 }
 
-function bookingReply(step: BookingStep, preferences: Preferences, zip: string, payment: PaymentChoice) {
-  const visit = preferences.visitType;
-  const article = /^[aeiou]/i.test(visit) ? "an" : "a";
-  if (step === "visit") return "What kind of visit do you want?";
-  if (step === "location") return `I can book ${article} ${visit} visit. Which ZIP should I search near?`;
-  if (step === "time") return `I’ll look near ${zip || "your ZIP"}. What time of day works best?`;
-  if (step === "payment") return `${preferences.preferredTimes}. How do you want to pay?`;
-  return `I can look for ${visit} visits ${preferences.location.toLowerCase()}, ${preferences.preferredTimes.toLowerCase()}, ${paymentTitle(payment).toLowerCase()}. I can show options when you’re ready.`;
+function visitPhrase(visitType: string) {
+  if (visitType === "other") return "another visit";
+  const label = visitTypeLabel(visitType).toLowerCase();
+  return `${/^[aeiou]/i.test(label) ? "an" : "a"} ${label}`;
 }
 
-function bookingNudge(step: BookingStep) {
-  if (step === "visit") return "Choose dental, eye, annual, or other.";
+function bookingReply(step: BookingStep, preferences: Preferences, zip: string, payment: PaymentChoice, language: string) {
+  if (language === "Spanish") {
+    const visit = spanishVisit(preferences.visitType);
+    if (step === "visit") return "¿Qué tipo de consulta necesitas?";
+    if (step === "location") return `Puedo ayudarte a reservar ${visit}. ¿Cerca de qué código postal debo buscar?`;
+    if (step === "time") return `Usaré tu código postal, ${zip}, y buscaré dentro de 5 millas. ¿Qué días y horarios te sirven?`;
+    if (step === "payment") return `${preferences.preferredTimes}. ¿Cómo deseas pagar?`;
+    return `Puedo buscar opciones de ${visit} cerca de ${zip}, en ${preferences.preferredTimes}. Puedo mostrarte consultorios cuando estés listo.`;
+  }
+  if (language === "Chinese") {
+    const visit = chineseVisit(preferences.visitType);
+    if (step === "visit") return "您需要哪种就诊服务？";
+    if (step === "location") return `我可以帮您预约${visit}。请问要在哪个邮政编码附近搜索？`;
+    if (step === "time") return `我会使用您的邮政编码 ${zip}，搜索 5 英里以内的诊所。哪些日期和时间方便？`;
+    if (step === "payment") return `${preferences.preferredTimes}。您希望如何付款？`;
+    return `我可以查找邮政编码 ${zip} 附近、时间为 ${preferences.preferredTimes} 的${visit}选项。准备好后我可以显示诊所。`;
+  }
+  const visit = visitTypeLabel(preferences.visitType).toLowerCase();
+  if (step === "visit") return "What kind of visit do you want?";
+  if (step === "location") return `I can book ${visitPhrase(preferences.visitType)}. Which ZIP should I search near?`;
+  if (step === "time") return `I’ll use your ZIP code, ${zip}, and search within 5 miles. What time of day works best?`;
+  if (step === "payment") return `${preferences.preferredTimes}. How do you want to pay?`;
+  return `I can look for ${visit} options ${preferences.location.toLowerCase()}, ${preferences.preferredTimes.toLowerCase()}, ${paymentTitle(payment).toLowerCase()}. I can show options when you’re ready.`;
+}
+
+function bookingNudge(step: BookingStep, language: string) {
+  if (language === "Spanish") {
+    if (step === "visit") return "Elige consulta dental, examen de la vista, examen físico anual u otra consulta.";
+    if (step === "location") return "Envía un código postal de 5 dígitos o usa el de tu perfil.";
+    if (step === "time") return "Dime los días y horarios que te sirven o elige una sugerencia.";
+    if (step === "payment") return "Elige seguro, pago por cuenta propia o decidir después.";
+    return "Puedo mostrarte opciones cuando estés listo.";
+  }
+  if (language === "Chinese") {
+    if (step === "visit") return "请选择牙科、眼科、年度体检或其他就诊服务。";
+    if (step === "location") return "请输入 5 位邮政编码，或使用个人资料中的邮政编码。";
+    if (step === "time") return "请告诉我方便的日期和时间，或选择下方建议。";
+    if (step === "payment") return "请选择保险、自费或稍后决定。";
+    return "准备好后我可以显示选项。";
+  }
+  if (step === "visit") return "Choose a dental visit, eye exam, annual physical, or other visit.";
   if (step === "location") return "Send a 5-digit ZIP, or use the one on your profile.";
-  if (step === "time") return "Choose weekday mornings, weekday afternoons, or flexible.";
+  if (step === "time") return "Tell me the days and times that work, or choose one of the suggestions below.";
   if (step === "payment") return "Choose insurance, self-pay, or decide later.";
   return "I can show options when you’re ready.";
 }
 
 function wantsBooking(text: string) {
-  return /\b(book|booking|appointment|schedule|checkup|check-up)\b/i.test(text);
+  return /\b(book|booking|appointment|schedule|checkup|check-up|cita|reservar|programar|consulta)\b/i.test(text)
+    || /预约|挂号|看诊|体检/.test(text);
 }
 
 function detectVisit(text: string) {
   const lower = text.toLowerCase();
   if (visitTypes.includes(lower.trim())) return lower.trim();
+  if (lower.trim() === "other visit") return "other";
   if (/\b(eye|vision|optical)\b/.test(lower)) return "eye";
+  if (/\b(ojo|ojos|vista|óptica|optica)\b/.test(lower) || /眼科|眼睛|视力/.test(text)) return "eye";
   if (/\b(dental|dentist|tooth|teeth)\b/.test(lower)) return "dental";
+  if (/\b(dental|dentista|diente|dientes|limpieza)\b/.test(lower) || /牙科|牙医|牙齿|洗牙/.test(text)) return "dental";
   if (/\b(annual|physical|primary)\b/.test(lower)) return "annual";
+  if (/\b(anual|físico|fisico|chequeo)\b/.test(lower) || /年度体检|体检/.test(text)) return "annual";
   if (/\b(dermat|skin)\b/.test(lower)) return "other";
   return null;
 }
 
 function detectTime(text: string) {
-  const lower = text.toLowerCase();
-  if (lower.includes("afternoon")) return "Weekday afternoons";
-  if (lower.includes("morning")) return "Weekday mornings";
-  if (lower.includes("flexible")) return "Flexible";
+  const trimmed = text.trim().replace(/[.!?]+$/, "");
+  const lower = trimmed.toLowerCase();
+  if (lower.includes("flexible") || lower.includes("any time") || lower.includes("anytime") || lower.includes("cualquier hora") || /都可以|任何时间|灵活/.test(trimmed)) return "Flexible";
+  const availability = /\b(?:mon(?:day)?s?|tue(?:sday)?s?|wed(?:nesday)?s?|thu(?:rsday)?s?|fri(?:day)?s?|sat(?:urday)?s?|sun(?:day)?s?|weekdays?|weekends?|mornings?|afternoons?|evenings?|nights?|noon|lunes|martes|miércoles|miercoles|jueves|viernes|sábado|sabado|domingo|mañanas?|mananas?|tardes?|noches?|después\s+de\s+\d{1,2}|antes\s+de\s+\d{1,2}|after\s+\d{1,2}|before\s+\d{1,2}|\d{1,2}(?::\d{2})?\s*(?:am|pm))\b/i;
+  const chineseAvailability = /周[一二三四五六日天]|星期[一二三四五六日天]|上午|下午|晚上|早上|中午|点|任何时间/;
+  if (trimmed.length <= 120 && (availability.test(trimmed) || chineseAvailability.test(trimmed))) {
+    return `${trimmed.charAt(0).toUpperCase()}${trimmed.slice(1)}`;
+  }
   return null;
 }
 
@@ -797,21 +916,45 @@ function detectZip(text: string) {
 
 function detectPayment(text: string): PaymentChoice | null {
   const lower = text.toLowerCase();
-  if (lower.includes("insurance")) return "insurance";
-  if (lower.includes("self-pay") || lower.includes("self pay") || lower.includes("pay myself")) return "self";
-  if (lower.includes("decide later") || lower.includes("decide at")) return "later";
+  if (lower.includes("insurance") || lower.includes("seguro") || /保险/.test(text)) return "insurance";
+  if (lower.includes("self-pay") || lower.includes("self pay") || lower.includes("pay myself") || lower.includes("pago propio") || lower.includes("pagar yo") || /自费|自己付/.test(text)) return "self";
+  if (lower.includes("decide later") || lower.includes("decide at") || lower.includes("decidir después") || lower.includes("decidir despues") || /稍后决定|以后决定/.test(text)) return "later";
   return null;
 }
 
-function generalReply(text: string) {
+function generalReply(text: string, language: string) {
   const lower = text.toLowerCase();
+  if (language === "Spanish") {
+    if (lower.includes("cost") || lower.includes("price") || lower.includes("costo") || lower.includes("precio")) return "Los precios son estimados típicos de pago propio. El consultorio confirmará el costo final.";
+    if (lower.includes("insurance") || lower.includes("seguro")) return "Puedes usar seguro, pagar por cuenta propia o decidir al reservar. La cobertura debe verificarse.";
+    return "Dime qué consulta necesitas, como dental, examen de la vista, examen físico anual u otra consulta.";
+  }
+  if (language === "Chinese") {
+    if (/费用|价格|多少钱/.test(text) || lower.includes("cost") || lower.includes("price")) return "显示的是常见自费估价，最终费用由诊所确认。";
+    if (/保险/.test(text) || lower.includes("insurance")) return "您可以使用保险、自费或预约时再决定。保险资格仍需核实。";
+    return "请告诉我您需要哪种就诊服务，例如牙科、眼科、年度体检或其他服务。";
+  }
   if (lower.includes("cost") || lower.includes("price")) {
     return "Estimates are typical self-pay ranges. The office confirms the final cost before you’re charged.";
   }
   if (lower.includes("insurance")) {
     return "You can use insurance, pay yourself, or decide when you book. Coverage still needs a check before anyone treats it as verified.";
   }
-  return "Tell me the visit you want, such as dental, eye, annual, or other. I’ll ask where, when, and how you want to pay.";
+  return "Tell me the visit you want, such as a dental visit, eye exam, annual physical, or other visit. I’ll ask where, when, and how you want to pay.";
+}
+
+function spanishVisit(visitType: string) {
+  if (visitType === "dental") return "una consulta dental";
+  if (visitType === "eye") return "un examen de la vista";
+  if (visitType === "annual") return "un examen físico anual";
+  return "otra consulta";
+}
+
+function chineseVisit(visitType: string) {
+  if (visitType === "dental") return "牙科就诊";
+  if (visitType === "eye") return "眼科检查";
+  if (visitType === "annual") return "年度体检";
+  return "其他就诊";
 }
 
 export function toIcs(appointment: Appointment, name: string) {
@@ -825,7 +968,7 @@ export function toIcs(appointment: Appointment, name: string) {
     `DTSTAMP:${stamp}`,
     `DTSTART:${appointment.startIso}`,
     `DTEND:${appointment.endIso}`,
-    `SUMMARY:${appointment.visitType} at ${appointment.provider}`,
+    `SUMMARY:${visitTypeLabel(appointment.visitType)} at ${appointment.provider}`,
     `LOCATION:${appointment.address}, ${appointment.cityLine}`,
     `DESCRIPTION:${appointment.simulated ? "Simulated appointment request" : "Appointment"} for ${name}. Reference ${appointment.reference}.`,
     "END:VEVENT",

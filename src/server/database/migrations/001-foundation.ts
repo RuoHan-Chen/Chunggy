@@ -154,9 +154,9 @@ function appointmentTypeSeeds() {
 
 function providerSeeds() {
   return [
-    ["loc-lakeview-dental", "Lakeview Dental", "+13125550141", 4.8, "2847 N Clark St", "Chicago", "IL", "60657", 41.933278, -87.646037],
-    ["loc-north-branch-dental", "North Branch Dental", "+17735550192", 4.6, "4016 N Lincoln Ave", "Chicago", "IL", "60618", 41.954826, -87.681121],
-    ["loc-riverside-smile", "Riverside Smile Studio", "+17735550176", 4.9, "2112 W Belmont Ave", "Chicago", "IL", "60618", 41.939657, -87.680993],
+    ["loc-lakeview-dental", "Lakeview Dental", "+19172082802", 4.8, "2847 N Clark St", "Chicago", "IL", "60657", 41.933278, -87.646037],
+    ["loc-north-branch-dental", "North Branch Dental", "+18327578013", 4.6, "4016 N Lincoln Ave", "Chicago", "IL", "60618", 41.954826, -87.681121],
+    ["loc-riverside-smile", "Riverside Smile Studio", "+19172082802", 4.9, "2112 W Belmont Ave", "Chicago", "IL", "60618", 41.939657, -87.680993],
   ].map(([id, name, phone, rating, address, city, region, postal, latitude, longitude]) => ({
     sql: `MERGE INTO PROVIDER_LOCATIONS target
       USING (SELECT :id LOCATION_ID, :name PROVIDER_NAME, :phone PHONE_E164, :rating RATING, :address ADDRESS_LINE_1, :city CITY, :region REGION, :postal POSTAL_CODE, :latitude LATITUDE, :longitude LONGITUDE FROM DUAL) source

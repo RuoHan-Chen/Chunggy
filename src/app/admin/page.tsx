@@ -7,7 +7,7 @@ import { signOutUser } from "@/app/auth-actions";
 import { auth } from "@/auth";
 import { getDatabaseOverview } from "@/lib/db";
 import { getIntegrationStatus } from "@/lib/env";
-import { readFoundationTables, type FoundationTablePreview } from "@/server/database/foundation-preview";
+import { readFoundationTables, type FoundationTable, type FoundationTablePreview } from "@/server/database/foundation-preview";
 
 import styles from "./admin.module.css";
 import { DemoPanel } from "./demo-panel";
@@ -54,6 +54,13 @@ async function AdminScreen() {
       tableError = true;
     }
   }
+  const workflowMetrics: Array<{ label: string; table: FoundationTable; detail: string }> = [
+    { label: "Conversations", table: "CONVERSATIONS", detail: "Persistent assistant chats" },
+    { label: "Care requests", table: "CARE_REQUESTS", detail: "Appointment searches" },
+    { label: "Options", table: "APPOINTMENT_OPTIONS", detail: "Catalog and Vapi times" },
+    { label: "Appointments", table: "APPOINTMENTS", detail: "Saved or requested visits" },
+    { label: "Outreach", table: "OUTREACH_ATTEMPTS", detail: "Vapi and notification attempts" },
+  ];
 
   return (
     <div className={styles.frame}>
@@ -86,8 +93,25 @@ async function AdminScreen() {
           <li>Google auth: {status.auth ? "configured" : "not configured"}</li>
           <li>OpenAI: {status.openai ? "configured" : "not configured"}</li>
           <li>OCI Generative AI: {status.oracleAi ? "configured" : "not configured"}</li>
+          <li>Vapi doctor calls: {status.vapi ? "configured" : "not configured"}</li>
         </ul>
       </section>
+
+      {tables ? (
+        <section className={styles.section}>
+          <h2>Care workflow</h2>
+          <p className={styles.lede}>Live row counts for the user journey from assistant chat through office outreach.</p>
+          <div className={styles.workflowGrid}>
+            {workflowMetrics.map((metric) => (
+              <article className={styles.workflowCard} key={metric.table}>
+                <strong>{tables.find((table) => table.table === metric.table)?.count ?? 0}</strong>
+                <span>{metric.label}</span>
+                <small>{metric.detail}</small>
+              </article>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       <section className={styles.section}>
         <h2>Database</h2>
@@ -101,7 +125,7 @@ async function AdminScreen() {
           <p className={styles.error}>Oracle could not be reached. Check the wallet, environment variables, and network, then reload.</p>
         ) : (
           <>
-            <p className={styles.lede}>Read-only metadata and the latest rows from the foundation tables.</p>
+            <p className={styles.lede}>Read-only metadata and the latest rows from foundation and care-workflow tables.</p>
             <ul className={styles.metrics}>
               <li>Database: {database.databaseName}</li>
               <li>Schema: {database.currentUser}</li>

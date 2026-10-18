@@ -35,6 +35,8 @@ type RequestRow = {
 
 type OptionRow = {
   optionId: string;
+  locationId: string;
+  phoneE164: string | null;
   offeredStart: Date;
   offeredEnd: Date | null;
   estimateMin: number | null;
@@ -58,6 +60,7 @@ export type CareRequestSearch = {
   radiusMiles: number;
   timePreference: string;
   paymentPreference: "INSURANCE" | "SELF" | "LATER" | null;
+  conversationId?: string | null;
 };
 
 const zipCentroids: Record<string, [number, number]> = {
@@ -99,7 +102,8 @@ export async function syncCareRequest(input: CareRequestSearch) {
                 :postalCode SEARCH_POSTAL_CODE,
                 :radiusMiles SEARCH_RADIUS_MILES,
                 :timePreference TIME_PREFERENCE,
-                :paymentPreference PAYMENT_PREFERENCE
+                :paymentPreference PAYMENT_PREFERENCE,
+                :conversationId SOURCE_CONVERSATION_ID
          FROM DUAL
        ) source
        ON (target.REQUEST_ID = source.REQUEST_ID AND target.USER_ID = source.USER_ID)
@@ -109,15 +113,16 @@ export async function syncCareRequest(input: CareRequestSearch) {
          target.SEARCH_RADIUS_MILES = source.SEARCH_RADIUS_MILES,
          target.TIME_PREFERENCE = source.TIME_PREFERENCE,
          target.PAYMENT_PREFERENCE = source.PAYMENT_PREFERENCE,
+         target.SOURCE_CONVERSATION_ID = source.SOURCE_CONVERSATION_ID,
          target.STATUS = 'OPTIONS_READY',
          target.UPDATED_AT = SYSTIMESTAMP
        WHEN NOT MATCHED THEN INSERT (
          REQUEST_ID, USER_ID, TYPE_ID, SEARCH_POSTAL_CODE, SEARCH_RADIUS_MILES,
-         TIME_PREFERENCE, PAYMENT_PREFERENCE, STATUS
+         TIME_PREFERENCE, PAYMENT_PREFERENCE, SOURCE_CONVERSATION_ID, STATUS
        ) VALUES (
          source.REQUEST_ID, source.USER_ID, source.TYPE_ID, source.SEARCH_POSTAL_CODE,
          source.SEARCH_RADIUS_MILES, source.TIME_PREFERENCE, source.PAYMENT_PREFERENCE,
-         'OPTIONS_READY'
+         source.SOURCE_CONVERSATION_ID, 'OPTIONS_READY'
        )`,
       {
         requestId,
@@ -127,6 +132,7 @@ export async function syncCareRequest(input: CareRequestSearch) {
         radiusMiles: input.radiusMiles,
         timePreference: input.timePreference,
         paymentPreference: input.paymentPreference,
+        conversationId: input.conversationId ?? null,
       },
     );
 
@@ -231,6 +237,10 @@ export async function findOpenCareRequest(userId: string) {
   });
 }
 
+export async function findCareRequest(userId: string, requestId: string) {
+  return withTransaction((connection) => loadCareRequest(connection, userId, requestId));
+}
+
 async function openRequestId(
   connection: oracledb.Connection,
   userId: string,
@@ -281,6 +291,8 @@ async function loadCareRequest(connection: oracledb.Connection, userId: string, 
 
   const options = await connection.execute<OptionRow>(
     `SELECT option_row.OPTION_ID AS "optionId",
+            option_row.LOCATION_ID AS "locationId",
+            location.PHONE_E164 AS "phoneE164",
             option_row.OFFERED_START AS "offeredStart",
             option_row.OFFERED_END AS "offeredEnd",
             option_row.ESTIMATE_MIN AS "estimateMin",
@@ -295,6 +307,7 @@ async function loadCareRequest(connection: oracledb.Connection, userId: string, 
             service.DURATION_MINUTES AS "durationMinutes",
             appointment_type.SLUG AS "visitType"
      FROM APPOINTMENT_OPTIONS option_row
+     JOIN PROVIDER_LOCATIONS location ON location.LOCATION_ID = option_row.LOCATION_ID
      JOIN APPOINTMENT_TYPES appointment_type ON appointment_type.TYPE_ID = option_row.TYPE_ID
      LEFT JOIN PROVIDER_SERVICES service
        ON service.LOCATION_ID = option_row.LOCATION_ID
@@ -324,6 +337,8 @@ function slotFromOption(row: OptionRow): Slot {
   const hour = Number(new Intl.DateTimeFormat("en-US", { hour: "numeric", hourCycle: "h23", timeZone: "America/Chicago" }).format(start));
   return {
     id: row.optionId,
+    locationId: row.locationId,
+    phone: row.phoneE164 ?? "",
     visitType: row.visitType,
     provider: row.providerName,
     dateLabel: new Intl.DateTimeFormat("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric", timeZone: "America/Chicago" }).format(start),
@@ -349,6 +364,165 @@ function formatClock(value: Date) {
     minute: "2-digit",
     timeZone: "America/Chicago",
   }).format(value);
+}
+
+export async function saveOfficeOutreach(input: {
+  userId: string;
+  requestId: string;
+  destination: string;
+  status: "READY_FOR_CALL" | "CALLING" | "COMPLETED" | "FAILED";
+  externalReference?: string | null;
+  summary: string;
+}) {
+  return withTransaction(async (connection) => {
+    const attemptId = crypto.randomUUID();
+    const inserted = await connection.execute(
+      `INSERT INTO OUTREACH_ATTEMPTS (
+         ATTEMPT_ID, REQUEST_ID, CHANNEL, DESTINATION, STATUS, EXTERNAL_REFERENCE, RESULT_SUMMARY
+       )
+       SELECT :attemptId, request.REQUEST_ID, 'PHONE', :destination, :status, :externalReference, :summary
+       FROM CARE_REQUESTS request
+       WHERE request.REQUEST_ID = :requestId
+         AND request.USER_ID = :userId`,
+      {
+        attemptId,
+        destination: input.destination.slice(0, 320),
+        status: input.status,
+        externalReference: input.externalReference ?? null,
+        summary: input.summary.slice(0, 500),
+        requestId: input.requestId,
+        userId: input.userId,
+      },
+    );
+    if ((inserted.rowsAffected ?? 0) < 1) throw new Error("The care request could not be prepared for a call.");
+    return attemptId;
+  });
+}
+
+export async function updateOfficeOutreach(input: {
+  userId: string;
+  attemptId: string;
+  status: "CALLING" | "COMPLETED" | "FAILED";
+  externalReference?: string | null;
+  summary: string;
+  resultJson?: string | null;
+}) {
+  return withTransaction(async (connection) => {
+    const updated = await connection.execute(
+      `UPDATE OUTREACH_ATTEMPTS attempt
+       SET STATUS = :status,
+           EXTERNAL_REFERENCE = :externalReference,
+           RESULT_SUMMARY = :summary,
+           RESULT_JSON = COALESCE(:resultJson, RESULT_JSON)
+       WHERE attempt.ATTEMPT_ID = :attemptId
+         AND EXISTS (
+           SELECT 1 FROM CARE_REQUESTS request
+           WHERE request.REQUEST_ID = attempt.REQUEST_ID
+             AND request.USER_ID = :userId
+         )`,
+      {
+        status: input.status,
+        externalReference: input.externalReference ?? null,
+        summary: input.summary.slice(0, 500),
+        resultJson: { val: input.resultJson ?? null, type: oracledb.DB_TYPE_CLOB },
+        attemptId: input.attemptId,
+        userId: input.userId,
+      },
+    );
+    return (updated.rowsAffected ?? 0) > 0;
+  });
+}
+
+export async function saveVapiAppointmentOptions(input: {
+  userId: string;
+  requestId: string;
+  locationId: string;
+  times: Array<{ label: string; startIso: string | null; endIso: string | null }>;
+  source?: "VAPI" | "DEMO";
+}) {
+  const sourceName = input.source ?? "VAPI";
+  return withTransaction(async (connection) => {
+    const source = await connection.execute<ProviderCandidate & { requestId: string }>(
+      `SELECT request.REQUEST_ID AS "requestId",
+              request.TYPE_ID AS "typeId",
+              location.LOCATION_ID AS "locationId",
+              location.PROVIDER_NAME AS "providerName",
+              location.RATING AS "rating",
+              location.ADDRESS_LINE_1 AS "addressLine1",
+              location.ADDRESS_LINE_2 AS "addressLine2",
+              location.CITY AS "city",
+              location.REGION AS "region",
+              location.POSTAL_CODE AS "postalCode",
+              service.DURATION_MINUTES AS "durationMinutes",
+              service.SELF_PAY_MIN AS "selfPayMin",
+              service.SELF_PAY_MAX AS "selfPayMax",
+              service.CURRENCY AS "currency"
+       FROM CARE_REQUESTS request
+       JOIN PROVIDER_SERVICES service
+         ON service.TYPE_ID = request.TYPE_ID
+        AND service.LOCATION_ID = :locationId
+       JOIN PROVIDER_LOCATIONS location ON location.LOCATION_ID = service.LOCATION_ID
+       WHERE request.REQUEST_ID = :requestId
+         AND request.USER_ID = :userId
+         AND service.IS_ACTIVE = 1
+         AND location.IS_ACTIVE = 1`,
+      { requestId: input.requestId, locationId: input.locationId, userId: input.userId },
+      { outFormat: oracledb.OUT_FORMAT_OBJECT },
+    );
+    const row = source.rows?.[0];
+    if (!row) throw new Error("The selected office is not linked to this care request.");
+
+    await connection.execute(
+      `UPDATE APPOINTMENT_OPTIONS
+       SET STATUS = 'REPLACED', UPDATED_AT = SYSTIMESTAMP
+       WHERE REQUEST_ID = :requestId
+         AND LOCATION_ID = :locationId
+         AND SOURCE = :sourceName
+         AND STATUS = 'SHOWN'`,
+      { requestId: input.requestId, locationId: input.locationId, sourceName },
+    );
+
+    const saved: Array<{ optionId: string; label: string; startIso: string; endIso: string | null }> = [];
+    for (const time of input.times) {
+      if (!time.startIso) continue;
+      const start = new Date(time.startIso);
+      if (!Number.isFinite(start.getTime())) continue;
+      const end = time.endIso ? new Date(time.endIso) : new Date(start.getTime() + row.durationMinutes * 60_000);
+      const optionId = crypto.randomUUID();
+      await connection.execute(
+        `INSERT INTO APPOINTMENT_OPTIONS (
+           OPTION_ID, REQUEST_ID, LOCATION_ID, TYPE_ID, OFFERED_START, OFFERED_END,
+           ESTIMATE_MIN, ESTIMATE_MAX, CURRENCY, PROVIDER_NAME, RATING,
+           ADDRESS_LINE_1, ADDRESS_LINE_2, CITY, REGION, POSTAL_CODE, SOURCE, STATUS
+         ) VALUES (
+           :optionId, :requestId, :locationId, :typeId, :offeredStart, :offeredEnd,
+           :estimateMin, :estimateMax, :currency, :providerName, :rating,
+           :addressLine1, :addressLine2, :city, :region, :postalCode, :sourceName, 'SHOWN'
+         )`,
+        {
+          optionId,
+          requestId: input.requestId,
+          locationId: row.locationId,
+          typeId: row.typeId,
+          offeredStart: start,
+          offeredEnd: end,
+          estimateMin: row.selfPayMin,
+          estimateMax: row.selfPayMax,
+          currency: row.currency || "USD",
+          providerName: row.providerName,
+          rating: row.rating,
+          addressLine1: row.addressLine1,
+          addressLine2: row.addressLine2,
+          city: row.city,
+          region: row.region,
+          postalCode: row.postalCode,
+          sourceName,
+        },
+      );
+      saved.push({ optionId, label: time.label, startIso: start.toISOString(), endIso: end.toISOString() });
+    }
+    return saved;
+  });
 }
 
 function formatEstimate(minimum: number | null, maximum: number | null) {

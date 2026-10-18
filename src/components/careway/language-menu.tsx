@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { languages } from "@/lib/careway/model";
+import { translate } from "@/lib/careway/i18n";
 import { IconChevronDown, IconGlobe } from "@/components/careway/icons";
 import styles from "@/components/careway/careway.module.css";
 
@@ -35,7 +36,7 @@ export function LanguageMenu({
         type="button"
       >
         <IconGlobe />
-        {selected}
+        {translate(selected, selected)}
         <IconChevronDown />
       </button>
       {open ? (
@@ -51,7 +52,7 @@ export function LanguageMenu({
                 role="option"
                 type="button"
               >
-                {language}
+                {translate(language, language)}
               </button>
             </li>
           ))}

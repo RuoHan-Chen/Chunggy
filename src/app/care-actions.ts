@@ -1,12 +1,27 @@
 "use server";
 
 import { auth } from "@/auth";
-import { digits, parseDob, type Appointment, type CareSaveResult, type Profile, type SavedCareRequest } from "@/lib/careway/model";
-import { cancelSavedAppointment, requestSavedAppointment } from "@/server/database/repositories/appointments";
-import { syncCareRequest } from "@/server/database/repositories/care-requests";
+import { declineResult, formatRetrievedCall, isDeclinedCall } from "@/lib/careway/call-flow";
+import { ConfigurationError } from "@/lib/env";
+import { digits, parseDob, type Appointment, type BookingStep, type CallDraft, type CareSaveResult, type ChatContextItem, type ChatProvider, type ChatSession, type Preferences, type Profile, type SavedCareRequest } from "@/lib/careway/model";
+import { cancelSavedAppointment, findBookingCallTarget, requestSavedAppointment } from "@/server/database/repositories/appointments";
+import { findCareRequest, saveOfficeOutreach, saveVapiAppointmentOptions, syncCareRequest, updateOfficeOutreach } from "@/server/database/repositories/care-requests";
+import { createVapiDoctorCall, getVapiCall, VapiApiError } from "@/server/vapi/client";
+import { normalizeDoctorCallResult } from "@/server/vapi/doctor-call-result";
+import {
+  addConversationContext,
+  completeAssistantMessage,
+  ConversationAccessError,
+  deleteConversation,
+  openConversation,
+  recordConversationTurn,
+  type StoredMessageInput,
+} from "@/server/database/repositories/conversations";
 import { deleteInsurancePolicies, listInsurancePolicies, saveInsurancePolicy } from "@/server/database/repositories/insurance";
 import { findPatientProfile, savePatientProfile } from "@/server/database/repositories/profiles";
+import { findProviderService } from "@/server/database/repositories/providers";
 import { resolveDatabaseUser } from "@/server/care-data";
+import { DEMO_CALL_DESTINATION } from "@/server/vapi/demo-offices";
 
 async function authenticatedUser() {
   const session = await auth();
@@ -112,6 +127,7 @@ const optionIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-
 export async function requestAppointmentAction(input: {
   optionId: string;
   shareSms: boolean;
+  callMode: "real" | "fake";
 }): Promise<CareSaveResult & { appointment: Appointment | null }> {
   try {
     const user = await authenticatedUser();
@@ -140,16 +156,102 @@ export async function requestAppointmentAction(input: {
         return { ok: false, persisted: false, appointment: null, message: "Enter the insurer, member ID, and plan name before requesting this visit." };
       }
     }
+    const target = await findBookingCallTarget(user.userId, input.optionId);
+    if (!target) {
+      return { ok: false, persisted: false, appointment: null, message: "That appointment time is no longer available. Choose another time." };
+    }
+    if (input.callMode === "real") {
+      if (target.failedBookingCalls >= 2) {
+        return {
+          ok: false,
+          persisted: false,
+          appointment: null,
+          message: `The booking call to ${target.providerName} has failed twice. No further call will be placed right now. Try again later.`,
+        };
+      }
+      const attemptId = await saveOfficeOutreach({
+        userId: user.userId,
+        requestId: target.requestId,
+        destination: DEMO_CALL_DESTINATION,
+        status: "CALLING",
+        summary: `Calling ${target.providerName} to request the selected appointment.`,
+      });
+      try {
+        const policy = policies.find((item) => item.active) ?? policies[0];
+        const preferredTime = new Intl.DateTimeFormat("en-US", {
+          dateStyle: "full",
+          timeStyle: "short",
+          timeZone: "America/Chicago",
+        }).format(new Date(target.offeredStart));
+        const created = await createVapiDoctorCall({
+          officeName: target.providerName,
+          officePhone: DEMO_CALL_DESTINATION,
+          patientName: profile.fullName,
+          patientPhone: profile.phoneE164,
+          patientDateOfBirth: profile.dateOfBirth,
+          patientAddress: [profile.addressLine1, profile.city, profile.region, profile.postalCode].filter(Boolean).join(", "),
+          patientLanguage: profile.preferredLanguage,
+          visitType: target.visitType,
+          reason: `Request the selected ${target.visitType} appointment and confirm whether the office can book it.`,
+          preferredTimes: `Selected appointment: ${preferredTime}`,
+          payment: profile.paymentPreference.toLowerCase(),
+          insurance: policy ? `${policy.payerName}; ${policy.planName}; member ${policy.memberId}` : "",
+        });
+        await updateOfficeOutreach({
+          userId: user.userId,
+          attemptId,
+          status: "CALLING",
+          externalReference: created.callId,
+          summary: `Vapi is asking ${target.providerName} to book the selected time.`,
+        });
+        const call = await waitForDoctorCall(created.callId, created.assistantId);
+        if (isDeclinedCall(call.status, call.endedReason) || call.status.toLowerCase() === "failed") {
+          const failedTwice = target.failedBookingCalls >= 1;
+          const detail = failedTwice
+            ? `The booking call to ${target.providerName} failed twice. No further call will be placed right now. Try again later.`
+            : `The booking call to ${target.providerName} did not complete${call.endedReason ? `: ${call.endedReason.replaceAll("-", " ")}` : "."} You can try one more time.`;
+          await updateOfficeOutreach({
+            userId: user.userId,
+            attemptId,
+            status: "FAILED",
+            externalReference: call.callId,
+            summary: `BOOKING_CALL_FAILED: ${detail}`.slice(0, 500),
+          });
+          return { ok: false, persisted: false, appointment: null, message: detail };
+        }
+        await updateOfficeOutreach({
+          userId: user.userId,
+          attemptId,
+          status: "COMPLETED",
+          externalReference: call.callId,
+          summary: (call.transcript?.trim() || "The real Vapi booking call completed. Waiting for office confirmation.").slice(0, 500),
+        });
+      } catch (error) {
+        const detail = error instanceof ConfigurationError
+          ? "Real booking calls are not configured. Add the Vapi private key, doctor assistant ID, and outbound phone number ID."
+          : error instanceof Error ? error.message : "The real booking call could not be completed.";
+        await updateOfficeOutreach({
+          userId: user.userId,
+          attemptId,
+          status: "FAILED",
+          summary: detail.slice(0, 500),
+        }).catch(() => undefined);
+        return { ok: false, persisted: false, appointment: null, message: detail };
+      }
+    }
     const appointment = await requestSavedAppointment({
       userId: user.userId,
       optionId: input.optionId,
       shareSms: input.shareSms,
+      callMode: input.callMode,
     });
     return {
       ok: true,
       persisted: true,
       appointment,
-      message: "Simulated request saved to Oracle. The office was not contacted.",
+      message: input.callMode === "real"
+        ? "The real Vapi booking call completed and the appointment request was saved."
+        : "The fake booking call completed. The office was not contacted.",
     };
   } catch (error) {
     console.error("Appointment request failed", error);
@@ -185,6 +287,367 @@ export async function cancelAppointmentAction(
       appointment: null,
       message: error instanceof Error ? error.message : "The appointment could not be cancelled.",
     };
+  }
+}
+
+export type ConversationActionResult = {
+  ok: boolean;
+  message: string;
+  session: ChatSession | null;
+};
+
+function conversationFailure(error: unknown, fallback: string): ConversationActionResult {
+  if (error instanceof ConversationAccessError) {
+    return { ok: false, message: error.message, session: null };
+  }
+  console.error(fallback, error);
+  return {
+    ok: false,
+    message: error instanceof Error ? error.message : fallback,
+    session: null,
+  };
+}
+
+export async function openConversationAction(conversationId: string): Promise<ConversationActionResult> {
+  try {
+    const user = await authenticatedUser();
+    const session = await openConversation(user.userId, conversationId);
+    if (!session) return { ok: false, message: "Conversation not found", session: null };
+    return { ok: true, message: "Conversation loaded.", session };
+  } catch (error) {
+    return conversationFailure(error, "Conversation could not be loaded.");
+  }
+}
+
+export async function recordConversationAction(input: {
+  conversationId: string | null;
+  title: string;
+  provider: ChatProvider;
+  bookingStep: BookingStep;
+  preferences: Preferences;
+  messages: StoredMessageInput[];
+  context: ChatContextItem[];
+  draftJson?: string | null;
+}): Promise<ConversationActionResult> {
+  try {
+    const user = await authenticatedUser();
+    const session = await recordConversationTurn({ ...input, userId: user.userId });
+    return { ok: true, message: "Conversation saved.", session };
+  } catch (error) {
+    return conversationFailure(error, "Conversation could not be saved.");
+  }
+}
+
+export async function completeAssistantAction(input: {
+  conversationId: string;
+  replaceMessageId: string | null;
+  message: StoredMessageInput;
+}): Promise<ConversationActionResult> {
+  try {
+    const user = await authenticatedUser();
+    const session = await completeAssistantMessage({ ...input, userId: user.userId });
+    return { ok: true, message: "Assistant reply saved.", session };
+  } catch (error) {
+    return conversationFailure(error, "Assistant reply could not be saved.");
+  }
+}
+
+export async function addConversationContextAction(
+  conversationId: string,
+  item: ChatContextItem,
+): Promise<ConversationActionResult> {
+  try {
+    const user = await authenticatedUser();
+    const session = await addConversationContext({ userId: user.userId, conversationId, item });
+    if (!session) return { ok: false, message: "Conversation not found", session: null };
+    return { ok: true, message: "Context saved.", session };
+  } catch (error) {
+    return conversationFailure(error, "Context could not be saved.");
+  }
+}
+
+export async function deleteConversationAction(conversationId: string): Promise<ConversationActionResult> {
+  try {
+    const user = await authenticatedUser();
+    const deleted = await deleteConversation(user.userId, conversationId);
+    if (!deleted) return { ok: false, message: "Conversation not found", session: null };
+    return { ok: true, message: "Conversation removed.", session: null };
+  } catch (error) {
+    return conversationFailure(error, "Conversation could not be removed.");
+  }
+}
+
+const conversationIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const terminalVapiStatuses = new Set(["ended", "completed", "failed"]);
+
+function fakeDoctorCallResult() {
+  const nextWeekday = (weekday: number, hour: number) => {
+    const date = new Date();
+    date.setUTCDate(date.getUTCDate() + 1);
+    date.setUTCHours(hour, 0, 0, 0);
+    while (date.getUTCDay() !== weekday) date.setUTCDate(date.getUTCDate() + 1);
+    return date;
+  };
+  const first = nextWeekday(2, 16);
+  const second = nextWeekday(4, 20);
+  const label = (date: Date) => new Intl.DateTimeFormat("en-US", {
+    weekday: "long",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: "America/Chicago",
+  }).format(date);
+  return {
+    availableTimes: [
+      { label: label(first), startIso: first.toISOString(), endIso: new Date(first.getTime() + 60 * 60_000).toISOString() },
+      { label: label(second), startIso: second.toISOString(), endIso: new Date(second.getTime() + 60 * 60_000).toISOString() },
+    ],
+    estimatedCost: "$120–$180",
+    insuranceResponse: "Insurance details received; coverage must be verified by the office.",
+    officeRequirements: ["Photo ID", "Insurance card if using insurance", "Arrive 15 minutes early"],
+    summary: "Demo availability was generated without contacting the office.",
+    followUpNotes: "Use a real Vapi call to get the office's actual availability.",
+  };
+}
+
+async function waitForDoctorCall(callId: string, assistantId: string) {
+  const deadline = Date.now() + 4 * 60_000;
+  let lastError: unknown;
+  while (Date.now() < deadline) {
+    try {
+      const call = await getVapiCall(callId, {
+        assistantId,
+        outputId: process.env.VAPI_DOCTOR_OUTPUT_ID?.trim(),
+      });
+      if (terminalVapiStatuses.has(call.status.toLowerCase())) return call;
+      lastError = null;
+    } catch (error) {
+      lastError = error;
+      if (error instanceof VapiApiError && error.statusCode && error.statusCode < 500) throw error;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 3_000));
+  }
+  if (lastError instanceof Error) throw lastError;
+  throw new VapiApiError("The doctor-office call is still in progress. Check Vapi for the final result.", 202);
+}
+
+export async function placeOfficeCallAction(input: {
+  conversationId: string | null;
+  visitType: string;
+  postalCode: string;
+  timePreference: string;
+  paymentPreference: Profile["payment"];
+  locationId: string;
+  reason: string;
+  declineCount: number;
+  simulate?: boolean;
+}): Promise<{ ok: boolean; message: string; reply: string; callDraft: CallDraft; saved?: SavedCareRequest }> {
+  const failed = (message: string, draft: CallDraft) => ({ ok: false, message, reply: message, callDraft: draft });
+  let baseDraft: CallDraft = {
+    workflow: "review",
+    reason: input.reason,
+    officeName: "",
+    officePhone: "",
+    locationId: input.locationId,
+    resultText: "",
+    declineCount: input.declineCount,
+    result: null,
+  };
+  try {
+    const user = await authenticatedUser();
+    const office = await findProviderService(input.locationId, input.visitType);
+    if (!office) return failed("That office is no longer available. Choose another office.", baseDraft);
+    baseDraft = {
+      ...baseDraft,
+      officeName: office.providerName,
+      officePhone: DEMO_CALL_DESTINATION,
+      locationId: office.locationId,
+    };
+    const declined = (kind: "declined" | "unreachable" = "declined") => {
+      const outcome = declineResult(input.declineCount, office.providerName, kind);
+      const draft: CallDraft = { ...baseDraft, workflow: outcome.workflow, declineCount: outcome.declineCount, resultText: outcome.reply };
+      return { ok: true, message: outcome.reply, reply: outcome.reply, callDraft: draft };
+    };
+    const profile = await findPatientProfile(user.userId);
+    if (!profile?.fullName.trim() || digits(profile.phoneE164).length < 10 || !profile.dateOfBirth || !/^\d{5}/.test(profile.postalCode)) {
+      return failed("Add your name, phone, date of birth, and ZIP before calling an office.", baseDraft);
+    }
+    if (!/^\d{5}$/.test(input.postalCode)) return failed("Enter a 5-digit ZIP before calling an office.", baseDraft);
+
+    const saved = await syncCareRequest({
+      userId: user.userId,
+      visitType: input.visitType,
+      postalCode: input.postalCode,
+      radiusMiles: 5,
+      timePreference: input.timePreference,
+      paymentPreference: input.paymentPreference.toUpperCase() as "INSURANCE" | "SELF" | "LATER",
+      conversationId: input.conversationId && conversationIdPattern.test(input.conversationId) ? input.conversationId : null,
+    });
+    const attemptId = await saveOfficeOutreach({
+      userId: user.userId,
+      requestId: saved.requestId,
+      destination: DEMO_CALL_DESTINATION,
+      status: input.simulate ? "COMPLETED" : "CALLING",
+      summary: input.simulate ? `Simulated call for ${office.providerName}; office not contacted.` : `Calling ${office.providerName}.`,
+    });
+
+    if (input.simulate) {
+      const doctorResult = fakeDoctorCallResult();
+      const savedTimes = await saveVapiAppointmentOptions({
+        userId: user.userId,
+        requestId: saved.requestId,
+        locationId: office.locationId,
+        times: doctorResult.availableTimes,
+        source: "DEMO",
+      });
+      const result = {
+        ...doctorResult,
+        availableTimes: doctorResult.availableTimes.map((time) => ({
+          ...time,
+          optionId: savedTimes.find((savedTime) => savedTime.startIso === time.startIso)?.optionId ?? "",
+        })),
+        savedForFollowUp: false,
+      };
+      const reply = formatRetrievedCall(office.providerName, [
+        `Summary: ${result.summary}`,
+        `Available times: ${result.availableTimes.map((time) => time.label).join("; ")}`,
+        `Estimated cost: ${result.estimatedCost}`,
+        `Insurance response: ${result.insuranceResponse}`,
+        `Office requirements: ${result.officeRequirements.join("; ")}`,
+        `Follow-up: ${result.followUpNotes}`,
+      ], true);
+      await updateOfficeOutreach({
+        userId: user.userId,
+        attemptId,
+        status: "COMPLETED",
+        externalReference: `demo-${attemptId}`,
+        summary: "Simulated call completed; office not contacted.",
+        resultJson: JSON.stringify(result),
+      });
+      const refreshedRequest = await findCareRequest(user.userId, saved.requestId);
+      return {
+        ok: true,
+        message: "The fake demo call finished.",
+        reply,
+        callDraft: { ...baseDraft, workflow: "completed", resultText: reply, result },
+        saved: refreshedRequest,
+      };
+    }
+
+    try {
+      const policies = input.paymentPreference === "insurance" ? await listInsurancePolicies(user.userId) : [];
+      const policy = policies.find((item) => item.active) ?? policies[0];
+      const created = await createVapiDoctorCall({
+        officeName: office.providerName,
+        officePhone: DEMO_CALL_DESTINATION,
+        patientName: profile.fullName,
+        patientPhone: profile.phoneE164,
+        patientDateOfBirth: profile.dateOfBirth,
+        patientAddress: [profile.addressLine1, profile.city, profile.region, profile.postalCode].filter(Boolean).join(", "),
+        patientLanguage: profile.preferredLanguage,
+        visitType: input.visitType,
+        reason: input.reason || input.visitType,
+        preferredTimes: input.timePreference,
+        payment: input.paymentPreference,
+        insurance: policy
+          ? `${policy.payerName}; ${policy.planName}; member ${policy.memberId}`
+          : "",
+      });
+      await updateOfficeOutreach({
+        userId: user.userId,
+        attemptId,
+        status: "CALLING",
+        externalReference: created.callId,
+        summary: `Vapi is calling ${office.providerName}.`,
+      });
+      const call = await waitForDoctorCall(created.callId, created.assistantId);
+      if (isDeclinedCall(call.status, call.endedReason)) {
+        const outcome = declined();
+        await updateOfficeOutreach({
+          userId: user.userId,
+          attemptId,
+          status: "FAILED",
+          externalReference: call.callId,
+          summary: outcome.reply.slice(0, 500),
+        });
+        return outcome;
+      }
+      if (call.status.toLowerCase() === "failed") {
+        const outcome = declined("unreachable");
+        await updateOfficeOutreach({
+          userId: user.userId,
+          attemptId,
+          status: "FAILED",
+          externalReference: call.callId,
+          summary: outcome.reply.slice(0, 500),
+        });
+        return outcome;
+      }
+      const doctorResult = normalizeDoctorCallResult(call.structuredOutput);
+      const savedTimes = doctorResult
+        ? await saveVapiAppointmentOptions({
+            userId: user.userId,
+            requestId: saved.requestId,
+            locationId: office.locationId,
+            times: doctorResult.availableTimes,
+          })
+        : [];
+      const result = doctorResult
+        ? {
+            ...doctorResult,
+            availableTimes: doctorResult.availableTimes.map((time) => ({
+              ...time,
+              optionId: savedTimes.find((savedTime) => savedTime.startIso === time.startIso)?.optionId ?? "",
+            })),
+            savedForFollowUp: false,
+          }
+        : null;
+      const structuredSummary = result ? JSON.stringify(result) : null;
+      const transcript = call.transcript?.trim();
+      const lines = result ? [
+        `Summary: ${result.summary}`,
+        `Available times: ${result.availableTimes.length ? result.availableTimes.map((time) => time.label).join("; ") : "None reported"}`,
+        `Estimated cost: ${result.estimatedCost ?? "Not reported"}`,
+        `Insurance response: ${result.insuranceResponse ?? "Not reported"}`,
+        `Office requirements: ${result.officeRequirements.length ? result.officeRequirements.join("; ") : "None reported"}`,
+        result.followUpNotes ? `Follow-up: ${result.followUpNotes}` : null,
+        `Vapi call: ${call.callId}`,
+      ].filter((line): line is string => Boolean(line)) : [
+        `Outcome: ${call.endedReason ? call.endedReason.replaceAll("-", " ") : call.status}`,
+        transcript ? `Transcript: ${transcript.slice(-2_000)}` : "Vapi did not return a transcript.",
+        `Vapi call: ${call.callId}`,
+      ].filter((line): line is string => Boolean(line));
+      const reply = formatRetrievedCall(office.providerName, lines);
+      await updateOfficeOutreach({
+        userId: user.userId,
+        attemptId,
+        status: "COMPLETED",
+        externalReference: call.callId,
+        summary: (structuredSummary ?? transcript ?? `Vapi call completed: ${call.status}`).slice(0, 500),
+        resultJson: structuredSummary,
+      });
+      const refreshedRequest = await findCareRequest(user.userId, saved.requestId);
+      return {
+        ok: true,
+        message: "The doctor-office call finished.",
+        reply,
+        callDraft: { ...baseDraft, workflow: "completed", resultText: reply, result },
+        saved: refreshedRequest,
+      };
+    } catch (error) {
+      const detail = error instanceof ConfigurationError
+        ? "Live doctor calls are not configured. Add the Vapi private key, doctor assistant ID, and outbound phone number ID on the server."
+        : error instanceof Error ? error.message : "The doctor-office call could not be completed.";
+      await updateOfficeOutreach({
+        userId: user.userId,
+        attemptId,
+        status: "FAILED",
+        summary: detail.slice(0, 500),
+      }).catch(() => undefined);
+      return failed(detail, { ...baseDraft, resultText: detail });
+    }
+  } catch (error) {
+    console.error("Office call handoff failed", error);
+    return failed("The call result could not be saved. Please try again.", baseDraft);
   }
 }
 

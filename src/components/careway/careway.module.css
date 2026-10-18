@@ -912,6 +912,7 @@
   padding: 12px 14px;
   border-radius: 16px;
   line-height: 1.45;
+  white-space: pre-wrap;
 }
 
 .userBubble {
@@ -963,6 +964,81 @@
   margin-left: 46px;
 }
 
+.officeCards {
+  display: grid;
+  gap: 10px;
+  margin-left: 46px;
+}
+
+.officeCard {
+  display: grid;
+  gap: 4px;
+  width: min(430px, 100%);
+  padding: 14px 16px;
+  border: 1px solid #d5deea;
+  border-radius: 14px;
+  background: white;
+  color: #243956;
+  text-align: left;
+  cursor: pointer;
+}
+
+.officeCard:hover {
+  border-color: var(--blue);
+}
+
+.officeCard:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.officeCard strong {
+  color: var(--navy);
+  font-size: 15px;
+}
+
+.officeCard span {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.returnedTimes {
+  display: grid;
+  gap: 8px;
+  margin-left: 46px;
+  padding: 14px;
+  border: 1px solid #bfd3f4;
+  border-radius: 14px;
+  background: #f6f9ff;
+  color: #243956;
+}
+
+.returnedTime {
+  padding: 10px 12px;
+  border: 1px solid #c8d8ef;
+  border-radius: 10px;
+  background: white;
+  color: var(--blue);
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+
+.returnedTime:disabled {
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
+.followUpSaved {
+  margin-left: 46px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #eef9f2;
+  color: #17603a;
+  font-size: 13px;
+}
+
 .chip,
 .chipSelected {
   height: 40px;
@@ -1004,6 +1080,53 @@
 
 .chatError span {
   line-height: 1.4;
+}
+
+.callingBanner {
+  display: grid;
+  gap: 4px;
+  margin: 0 0 10px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: #e8f1ff;
+  color: #1e3a8a;
+}
+
+.callingBanner strong {
+  font-size: 15px;
+}
+
+.callingBanner span,
+.callFailed span {
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.callFailed {
+  display: grid;
+  gap: 4px;
+  margin: 0 0 10px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: #fff1f2;
+  color: #9f1239;
+}
+
+.callFailed strong {
+  font-size: 15px;
+}
+
+.chatError button {
+  justify-self: start;
+  margin-top: 4px;
+  padding: 6px 12px;
+  border: 1px solid #fecdd3;
+  border-radius: 999px;
+  background: #fff;
+  color: #9f1239;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
 }
 
 .composer input[type="text"],

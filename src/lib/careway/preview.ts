@@ -45,7 +45,7 @@ export function eyeReadyPreview(name: string): CareSnapshot {
       {
         id: "demo-assistant",
         role: "assistant",
-        text: `I can look for eye visits ${location.toLowerCase()}, ${preferredTimes.toLowerCase()}, self-pay. I can show options when you’re ready.`,
+        text: `I can look for eye exam options ${location.toLowerCase()}, ${preferredTimes.toLowerCase()}, self-pay. I can show options when you’re ready.`,
         time: "10:24 AM",
       },
     ],
