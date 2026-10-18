@@ -124,7 +124,7 @@ export function CareProvider({ user, initialData, children }: { user: CareUser; 
   );
   const readStoredPreview = useCallback(() => readPreview(user.email), [user.email]);
   const preview = useSyncExternalStore(subscribe, readStoredPreview, emptyPreview);
-  const snapshot = preview ?? sessionSnapshot;
+  const snapshot = initialData.mode === "fallback" && preview ? preview : sessionSnapshot;
 
   useEffect(() => {
     if (!preview || previewApplied) return;
@@ -141,6 +141,10 @@ export function CareProvider({ user, initialData, children }: { user: CareUser; 
       const stored = readPreview(user.email);
       if (stored) {
         writePreview(user.email, recipe(stored));
+        return;
+      }
+      if (initialData.mode === "fallback") {
+        writePreview(user.email, recipe(snapshot));
         return;
       }
       setSessionSnapshot(recipe);
