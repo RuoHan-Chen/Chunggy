@@ -386,6 +386,49 @@
   font-weight: 700;
 }
 
+.nextStep {
+  display: grid;
+  align-content: start;
+  justify-items: start;
+  min-height: 320px;
+  padding: 28px;
+  background:
+    radial-gradient(circle at 92% 0%, rgba(37, 99, 235, 0.16), transparent 36%),
+    linear-gradient(180deg, #f7faff 0%, #ffffff 62%);
+}
+
+.nextStepIcon {
+  display: grid;
+  width: 56px;
+  height: 56px;
+  margin-bottom: 18px;
+  place-items: center;
+  border-radius: 18px;
+  background: white;
+  color: var(--blue);
+  box-shadow: 0 10px 24px rgba(37, 99, 235, 0.12);
+}
+
+.nextStep .kicker {
+  margin-bottom: 6px;
+  color: var(--blue);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.nextStep h2 {
+  margin-bottom: 8px;
+  font-size: 30px;
+  line-height: 1.1;
+}
+
+.nextStep .cardLede {
+  max-width: 36ch;
+  margin-bottom: 24px;
+  font-size: 15.5px;
+}
+
 .provider {
   margin: 4px 0 16px;
   color: #607089;
@@ -1028,6 +1071,11 @@
 .returnedTime:disabled {
   color: var(--muted);
   cursor: not-allowed;
+}
+
+a.returnedTime {
+  display: block;
+  text-align: center;
 }
 
 .followUpSaved {

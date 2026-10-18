@@ -46,7 +46,7 @@ export function HomeView() {
       ) : null}
 
       <div className={styles.split}>
-        <section className={styles.card}>
+        <section className={visit ? styles.card : `${styles.card} ${styles.nextStep}`}>
           {visit ? (
             <>
               <p className={styles.kicker}>{t("Upcoming")}</p>
@@ -78,6 +78,9 @@ export function HomeView() {
             </>
           ) : (
             <>
+              <span className={styles.nextStepIcon} aria-hidden="true">
+                <IconChat />
+              </span>
               <p className={styles.kicker}>{t("Next step")}</p>
               <h2>{t("Find a visit")}</h2>
               <p className={styles.cardLede}>

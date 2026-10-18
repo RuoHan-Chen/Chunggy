@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
@@ -8,8 +9,24 @@ import { IconBot, IconPaperclip, IconSend } from "@/components/careway/icons";
 import { useCare } from "@/components/careway/provider";
 import { displayPhone, workflowLabel } from "@/lib/careway/call-flow";
 import { languageLocale, translate } from "@/lib/careway/i18n";
-import { bookingChoices } from "@/lib/careway/model";
+import { bookingChoices, isOpenAppointment } from "@/lib/careway/model";
 import styles from "@/components/careway/careway.module.css";
+
+function sameBookedTime(
+  appointment: { id: string; locationId?: string; startIso: string; longDate: string; timeLabel: string },
+  time: { optionId: string; label: string; startIso: string | null },
+  locationId: string,
+) {
+  if (time.optionId && appointment.id === time.optionId) return true;
+  if (time.startIso && appointment.startIso === time.startIso && (!appointment.locationId || appointment.locationId === locationId)) return true;
+  const label = time.label.toLowerCase().replace(/[.,]/g, " ");
+  const weekday = label.match(/monday|tuesday|wednesday|thursday|friday|saturday|sunday/)?.[0];
+  const clock = label.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)/);
+  if (!weekday || !clock) return false;
+  const minute = (clock[2] ?? "00").padStart(2, "0");
+  const rendered = `${Number(clock[1])}:${minute} ${clock[3]}`;
+  return appointment.longDate.toLowerCase().includes(weekday) && appointment.timeLabel.toLowerCase() === rendered;
+}
 
 const starterPrompts = [
   "Help me schedule a dental appointment",
@@ -39,6 +56,10 @@ export function AssistantView() {
   const callFailed = (care.activeChat.callDraft?.declineCount ?? 0) >= 2;
   const callResult = care.activeChat.callDraft?.result;
   const selectedOffice = offices.find((office) => office.locationId === care.activeChat.callDraft?.locationId);
+  const appointmentHistory = care.appointments.length > 0 ? care.appointments : care.appointment ? [care.appointment] : [];
+  const bookedAppointment = appointmentHistory.find((appointment) =>
+    isOpenAppointment(appointment.status) && callResult?.availableTimes.some((time) => sameBookedTime(appointment, time, care.activeChat.callDraft.locationId)),
+  );
 
   useEffect(() => {
     const node = transcriptRef.current;
@@ -278,7 +299,20 @@ export function AssistantView() {
                 <p className={styles.typingBubble}>{care.callingOffice ? `${t("Calling")} ${care.callingOffice}…` : `${t("Thinking")}…`}</p>
               </div>
             ) : null}
-            {callResult && !callResult.savedForFollowUp ? (
+            {callResult && !callResult.savedForFollowUp && bookedAppointment ? (
+              <div className={styles.returnedTimes}>
+                <strong>{t("Appointment booked")}</strong>
+                <span>{bookedAppointment.provider} · {bookedAppointment.longDate} · {bookedAppointment.timeLabel}</span>
+                <Link
+                  className={styles.returnedTime}
+                  href="/appointments/confirmed"
+                  onClick={() => care.focusAppointment(bookedAppointment.appointmentId ?? bookedAppointment.reference)}
+                >
+                  {t("View appointment")}
+                </Link>
+              </div>
+            ) : null}
+            {callResult && !callResult.savedForFollowUp && !bookedAppointment ? (
               <div className={styles.returnedTimes}>
                 <strong>{t("Office response")}</strong>
                 {callResult.availableTimes.length ? (

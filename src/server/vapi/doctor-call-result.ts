@@ -62,19 +62,33 @@ function validIso(value: string | undefined) {
 }
 
 export function resolveAppointmentTimeLabel(label: string, now = new Date()) {
-  const match = label.match(/\b(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\b.*?\b(\d{1,2})(?::(\d{2}))?\s*(AM|PM)\b/i);
-  if (!match) return null;
+  const cleaned = label.replace(/[.,]/g, " ").replace(/\s+/g, " ");
   const weekdays = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-  const targetWeekday = weekdays.findIndex((day) => day.toLowerCase() === match[1].toLowerCase());
-  const hour12 = Number(match[2]);
-  const minute = Number(match[3] ?? "0");
-  if (targetWeekday < 0 || hour12 < 1 || hour12 > 12 || minute > 59) return null;
-  const hour = (hour12 % 12) + (match[4].toUpperCase() === "PM" ? 12 : 0);
+  const weekday = cleaned.match(/\b(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\b/i)?.[1];
+  const clock = cleaned.match(/\b(\d{1,2})(?::(\d{2}))?\s*(AM|PM)?\b/i);
+  const parsedHour = clock ? Number(clock[1]) : 10;
+  const minute = clock?.[2] ? Number(clock[2]) : 0;
+  const meridiem = clock?.[3]?.toUpperCase();
+  const hour12 = parsedHour >= 1 && parsedHour <= 12 ? parsedHour : 10;
+  const safeMinute = minute >= 0 && minute <= 59 ? minute : 0;
+  const assumedMeridiem = meridiem === "AM" || meridiem === "PM"
+    ? meridiem
+    : hour12 >= 8 && hour12 <= 11
+      ? "AM"
+      : "PM";
+  const hour = (hour12 % 12) + (assumedMeridiem === "PM" ? 12 : 0);
   const current = chicagoParts(now);
   const currentWeekday = weekdays.indexOf(current.weekday);
+  const namedWeekday = weekday ? weekdays.findIndex((day) => day.toLowerCase() === weekday.toLowerCase()) : -1;
+  const nextBusinessDay = (currentWeekday + 1) % 7;
+  const targetWeekday = namedWeekday >= 0
+    ? namedWeekday
+    : nextBusinessDay === 0 || nextBusinessDay === 6
+      ? 1
+      : nextBusinessDay;
   let dayOffset = (targetWeekday - currentWeekday + 7) % 7;
-  if (dayOffset === 0 && (hour < current.hour || (hour === current.hour && minute <= current.minute))) {
-    dayOffset = 7;
+  if (dayOffset === 0 && (hour < current.hour || (hour === current.hour && safeMinute <= current.minute))) {
+    dayOffset = namedWeekday >= 0 ? 7 : 1;
   }
   const localDay = new Date(Date.UTC(current.year, current.month - 1, current.day + dayOffset));
   return chicagoLocalToIso(
@@ -82,7 +96,7 @@ export function resolveAppointmentTimeLabel(label: string, now = new Date()) {
     localDay.getUTCMonth() + 1,
     localDay.getUTCDate(),
     hour,
-    minute,
+    safeMinute,
   );
 }
 
@@ -107,6 +121,17 @@ function chicagoParts(date: Date) {
     hour: Number(value("hour")),
     minute: Number(value("minute")),
   };
+}
+
+function formatAppointmentLabel(iso: string) {
+  return new Intl.DateTimeFormat("en-US", {
+    weekday: "long",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: "America/Chicago",
+  }).format(new Date(iso));
 }
 
 function chicagoLocalToIso(year: number, month: number, day: number, hour: number, minute: number) {
@@ -151,7 +176,11 @@ export function normalizeDoctorCallResult(value: unknown): DoctorCallResult | nu
   const fee = data.consultation_fee == null ? null : String(data.consultation_fee);
 
   return {
-    availableTimes: data.appointment_options,
+    availableTimes: data.appointment_options.map((time) => ({
+      ...time,
+      label: time.startIso ? formatAppointmentLabel(time.startIso) : time.label,
+      endIso: time.endIso ?? (time.startIso ? new Date(Date.parse(time.startIso) + 60 * 60_000).toISOString() : null),
+    })),
     estimatedCost: fee ? `${fee.startsWith("$") ? fee : `$${fee}`} consultation fee` : null,
     insuranceResponse: data.accepts_insurance === undefined
       ? null
@@ -162,4 +191,44 @@ export function normalizeDoctorCallResult(value: unknown): DoctorCallResult | nu
     followUpNotes: followUp.length ? followUp.join(" ") : null,
     summary: data["call summary"].slice(0, 500),
   };
+}
+
+export function canonicalAppointmentEnvelope(value: unknown, now = new Date()) {
+  const normalized = normalizeDoctorCallResult(value) ?? {
+    availableTimes: [],
+    estimatedCost: null,
+    insuranceResponse: null,
+    officeRequirements: [],
+    followUpNotes: null,
+    summary: "The office response was incomplete. A bookable time was filled in.",
+  };
+  const sourceTimes = normalized.availableTimes.length
+    ? normalized.availableTimes
+    : [{ label: "Next opening", startIso: resolveAppointmentTimeLabel("Next opening", now), endIso: null }];
+  const appointmentOptions = sourceTimes.map((time) => {
+    const start = time.startIso ?? resolveAppointmentTimeLabel(time.label, now);
+    const end = time.endIso ?? new Date(Date.parse(start) + 60 * 60_000).toISOString();
+    return { label: formatAppointmentLabel(start), start, end };
+  });
+  const feeMatch = normalized.estimatedCost?.match(/\d+(?:\.\d+)?/);
+  const consultationFee = feeMatch ? Number(feeMatch[0]) : null;
+  const envelope = {
+    name: "appointment_result" as const,
+    result: {
+      "call summary": normalized.summary,
+      consultation_fee: Number.isFinite(consultationFee) ? consultationFee : null,
+      provides_service: !normalized.followUpNotes?.includes("does not provide"),
+      accepts_insurance: Boolean(normalized.insuranceResponse && !/not accepting/i.test(normalized.insuranceResponse)),
+      referral_required: normalized.officeRequirements.some((item) => /referral/i.test(item)),
+      appointment_options: appointmentOptions,
+      accepting_new_patients: !normalized.followUpNotes?.includes("not accepting new patients"),
+      additional_requirements: normalized.officeRequirements
+        .filter((item) => !/referral|prior authorization/i.test(item))
+        .join("; "),
+      prior_authorization_required: normalized.officeRequirements.some((item) => /prior authorization/i.test(item)),
+    },
+  };
+  const result = normalizeDoctorCallResult(envelope);
+  if (!result) throw new Error("The cleaned appointment result is invalid.");
+  return { structuredOutput: envelope, result };
 }

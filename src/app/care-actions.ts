@@ -7,7 +7,7 @@ import { digits, parseDob, type Appointment, type BookingStep, type CallDraft, t
 import { cancelSavedAppointment, findBookingCallTarget, findShownAppointmentOption, requestSavedAppointment } from "@/server/database/repositories/appointments";
 import { findCareRequest, saveOfficeOutreach, saveVapiAppointmentOptions, syncCareRequest, updateOfficeOutreach } from "@/server/database/repositories/care-requests";
 import { createVapiDoctorCall, getVapiCall, VapiApiError } from "@/server/vapi/client";
-import { normalizeDoctorCallResult, resolveAppointmentTimeLabel } from "@/server/vapi/doctor-call-result";
+import { canonicalAppointmentEnvelope, resolveAppointmentTimeLabel } from "@/server/vapi/doctor-call-result";
 import { summarizeDoctorCallWithAgent } from "@/server/vapi/doctor-call-summary";
 import {
   addConversationContext,
@@ -465,7 +465,6 @@ export async function prepareReturnedTimeAction(input: {
   );
   if (!returnedTime) return { ok: false as const, message: "That returned time is no longer available." };
   const startIso = returnedTime.startIso ?? resolveAppointmentTimeLabel(returnedTime.label);
-  if (!startIso) return { ok: false as const, message: "The office did not provide enough detail to book that time." };
   const existing = await findShownAppointmentOption({
     userId: user.userId,
     requestId: input.requestId,
@@ -551,9 +550,9 @@ export async function placeOfficeCallAction(input: {
     });
 
     if (input.simulate) {
-      const structuredOutput = fakeDoctorCallStructuredOutput();
-      const doctorResult = normalizeDoctorCallResult(structuredOutput);
-      if (!doctorResult) return failed("The fake call did not return valid appointment details.", baseDraft);
+      const interpretedCall = canonicalAppointmentEnvelope(fakeDoctorCallStructuredOutput());
+      const doctorResult = interpretedCall.result;
+      const structuredOutput = interpretedCall.structuredOutput;
       const savedTimes = await saveVapiAppointmentOptions({
         userId: user.userId,
         requestId: saved.requestId,

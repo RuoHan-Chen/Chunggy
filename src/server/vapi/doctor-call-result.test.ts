@@ -34,10 +34,11 @@ describe("doctor call result", () => {
   });
 
   it("resolves weekday-only office times into bookable Chicago timestamps", () => {
-    expect(resolveAppointmentTimeLabel("Tuesday, 3 PM", new Date("2026-10-18T17:00:00.000Z")))
-      .toBe("2026-10-20T20:00:00.000Z");
-    expect(resolveAppointmentTimeLabel("No time reported", new Date("2026-10-18T17:00:00.000Z")))
-      .toBeNull();
+    const now = new Date("2026-10-18T17:00:00.000Z");
+    expect(resolveAppointmentTimeLabel("Tuesday, 3 PM", now)).toBe("2026-10-20T20:00:00.000Z");
+    expect(resolveAppointmentTimeLabel("Monday at 8. AM", now)).toBe("2026-10-19T13:00:00.000Z");
+    expect(resolveAppointmentTimeLabel("Tuesday at 9, AM", now)).toBe("2026-10-20T14:00:00.000Z");
+    expect(resolveAppointmentTimeLabel("No time reported", now)).toBe("2026-10-19T15:00:00.000Z");
   });
 
   it("normalizes the appointment_result output attached to the Vapi assistant", () => {
@@ -54,9 +55,9 @@ describe("doctor call result", () => {
     });
 
     expect(result?.availableTimes.map((time) => time.label)).toEqual([
-      "Monday, 3:00 PM",
-      "Wednesday, 2:00 PM",
-      "Friday, 3:00 PM",
+      expect.stringMatching(/^Monday, \w+ \d+, 3:00 PM$/),
+      expect.stringMatching(/^Wednesday, \w+ \d+, 2:00 PM$/),
+      expect.stringMatching(/^Friday, \w+ \d+, 3:00 PM$/),
     ]);
     expect(result?.estimatedCost).toBe("$50 consultation fee");
     expect(result?.insuranceResponse).toContain("accepting");

@@ -43,8 +43,11 @@ describe("doctor call summary agent", () => {
 
     expect(generate).toHaveBeenCalledOnce();
     expect(result?.result.availableTimes[0]?.startIso).toBe("2026-10-19T20:00:00.000Z");
-    expect(result?.result.availableTimes[1]?.label).toBe("Wednesday, 2:00 PM");
-    expect(result?.structuredOutput).toMatchObject({ name: "appointment_result" });
+    expect(result?.result.availableTimes[1]?.label).toMatch(/^Wednesday, \w+ \d+, 2:00 PM$/);
+    expect(result?.structuredOutput).toMatchObject({
+      name: "appointment_result",
+      result: { consultation_fee: 50, appointment_options: [expect.any(Object), expect.any(Object)] },
+    });
   });
 
   it("falls back to the structured result when the agent fails", async () => {
@@ -59,7 +62,42 @@ describe("doctor call summary agent", () => {
       },
     );
 
-    expect(result?.result.availableTimes[0]?.label).toBe("Friday, 3:00 PM");
+    expect(result?.result.availableTimes[0]?.label).toMatch(/^Friday, \w+ \d+, 3:00 PM$/);
     expect(result?.result.availableTimes[0]?.startIso).toMatch(/T20:00:00\.000Z$/);
+    expect(result?.structuredOutput).toMatchObject({ name: "appointment_result" });
+  });
+
+  it("asks again when the model returns the wrong output type", async () => {
+    const generate = vi.fn()
+      .mockResolvedValueOnce({ text: JSON.stringify({ appointment_options: ["Monday at 8. AM"] }) })
+      .mockResolvedValueOnce({
+        text: JSON.stringify({
+          name: "appointment_result",
+          result: {
+            "call summary": "The office has one opening.",
+            consultation_fee: 50,
+            provides_service: true,
+            accepts_insurance: true,
+            referral_required: false,
+            appointment_options: [{
+              label: "Monday at 8. AM",
+              start: "2026-10-19T13:00:00.000Z",
+              end: "2026-10-19T14:00:00.000Z",
+            }],
+            accepting_new_patients: true,
+            additional_requirements: "",
+            prior_authorization_required: false,
+          },
+        }),
+      });
+
+    const result = await summarizeDoctorCallWithAgent({ appointment_options: ["Monday at 8. AM"] }, null, generate);
+
+    expect(generate).toHaveBeenCalledTimes(2);
+    expect(result?.result.availableTimes[0]?.label).toBe("Monday, Oct 19, 8:00 AM");
+    expect(result?.structuredOutput).toMatchObject({
+      name: "appointment_result",
+      result: { consultation_fee: 50 },
+    });
   });
 });
