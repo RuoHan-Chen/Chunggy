@@ -32,7 +32,7 @@ export async function createOracleAiResponse(message: string) {
           content: [
             {
               type: "TEXT",
-              text: "You are Chunggy, a concise and helpful hackathon assistant. Do not claim to have queried the database unless database results are explicitly included in the prompt.",
+              text: "You are Assurance, a concise and helpful hackathon assistant. Do not claim to have queried the database unless database results are explicitly included in the prompt.",
             } as generativeaiinference.models.TextContent,
           ],
         },
