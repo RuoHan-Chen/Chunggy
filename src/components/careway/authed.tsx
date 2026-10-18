@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { CareProvider } from "@/components/careway/provider";
 import { AppShell } from "@/components/careway/shell";
+import { onboardingRedirect } from "@/lib/careway/onboarding-route";
 import styles from "@/components/careway/careway.module.css";
 import { loadCareBootstrap } from "@/server/care-data";
 
@@ -45,6 +46,11 @@ async function AuthedGate({
     image: session.user.image ?? null,
   };
   const initialData = await loadCareBootstrap(session);
+  const destination = onboardingRedirect(
+    withShell ? "care" : "onboarding",
+    initialData.snapshot.profile,
+  );
+  if (destination) redirect(destination);
 
   return (
     <CareProvider initialData={initialData} user={user}>

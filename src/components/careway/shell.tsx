@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState, type ReactNode } from "react";
+import { usePathname } from "next/navigation";
+import { useState, type ReactNode } from "react";
 
 import { signOutUser } from "@/app/auth-actions";
 import {
@@ -34,19 +34,11 @@ function isActive(pathname: string, href: string) {
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const router = useRouter();
   const care = useCare();
   const [menuOpen, setMenuOpen] = useState(false);
   const [noticesOpen, setNoticesOpen] = useState(false);
   const displayName = care.profile.fullName || care.user.name || "Assurance member";
   const unread = care.notices.some((notice) => !notice.read);
-
-  useEffect(() => {
-    if (!care.ready) return;
-    if (!care.profile.onboardingComplete && !care.profile.deferred) {
-      router.replace("/onboarding");
-    }
-  }, [care.profile.deferred, care.profile.onboardingComplete, care.ready, router]);
 
   if (!care.ready) {
     return (
