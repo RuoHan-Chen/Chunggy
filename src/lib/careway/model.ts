@@ -271,7 +271,7 @@ export function defaultSnapshot(name = ""): CareSnapshot {
     notices: [
       {
         id: "welcome",
-        title: "Welcome to Chunggy",
+        title: "Welcome to Assurance",
         body: "Add your phone number so offices can reach you about a visit.",
         read: false,
       },
@@ -798,9 +798,9 @@ export function toIcs(appointment: Appointment, name: string) {
   return [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
-    "PRODID:-//Chunggy//Appointments//EN",
+    "PRODID:-//Assurance//Appointments//EN",
     "BEGIN:VEVENT",
-    `UID:${appointment.reference}@chunggy.local`,
+    `UID:${appointment.reference}@assurance.local`,
     `DTSTAMP:${stamp}`,
     `DTSTART:${appointment.startIso}`,
     `DTEND:${appointment.endIso}`,

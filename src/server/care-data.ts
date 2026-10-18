@@ -68,7 +68,7 @@ function slotsFromProviders(rows: Awaited<ReturnType<typeof listProviderServices
 }
 
 export async function loadCareBootstrap(session: Session): Promise<CareBootstrap> {
-  const name = session.user?.name || "Chunggy member";
+  const name = session.user?.name || "Assurance member";
   try {
     const user = await resolveDatabaseUser(session);
     const [record, policies, providerGroups] = await Promise.all([

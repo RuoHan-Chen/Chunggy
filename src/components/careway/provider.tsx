@@ -3,9 +3,12 @@
 import { useRouter } from "next/navigation";
 import {
   createContext,
+  useCallback,
   useContext,
+  useEffect,
   useMemo,
   useState,
+  useSyncExternalStore,
   type ReactNode,
 } from "react";
 
@@ -32,6 +35,7 @@ import {
   type Profile,
   type Slot,
 } from "@/lib/careway/model";
+import { emptyPreview, readPreview, subscribePreview, writePreview } from "@/lib/careway/preview";
 
 export type CareUser = { name: string; email: string; image: string | null };
 
@@ -102,15 +106,39 @@ function describeChatError(status: number, payload: ChatApiResponse, provider: C
 
 export function CareProvider({ user, initialData, children }: { user: CareUser; initialData: CareBootstrap; children: ReactNode }) {
   const router = useRouter();
-  const [snapshot, setSnapshot] = useState(initialData.snapshot);
+  const [sessionSnapshot, setSessionSnapshot] = useState(initialData.snapshot);
   const [policyId, setPolicyId] = useState(initialData.insurancePolicyId);
   const [saving, setSaving] = useState(false);
   const [chatSessions, setChatSessions] = useState<ChatSession[]>(() => [chatFromSnapshot(initialData.snapshot)]);
   const [activeChatId, setActiveChatId] = useState("chat-initial");
+  const [previewApplied, setPreviewApplied] = useState(false);
+  const subscribe = useCallback(
+    (onChange: () => void) => subscribePreview(user.email, onChange),
+    [user.email],
+  );
+  const readStoredPreview = useCallback(() => readPreview(user.email), [user.email]);
+  const preview = useSyncExternalStore(subscribe, readStoredPreview, emptyPreview);
+  const snapshot = preview ?? sessionSnapshot;
+
+  useEffect(() => {
+    if (!preview || previewApplied) return;
+    const previewChat = chatFromSnapshot(preview, "chat-preview");
+    setChatSessions([previewChat]);
+    setActiveChatId(previewChat.id);
+    setPreviewApplied(true);
+  }, [preview, previewApplied]);
+
   const activeChat = chatSessions.find((session) => session.id === activeChatId) ?? chatSessions[0];
 
   const value = useMemo<CareContextValue>(() => {
-    const commit = (recipe: (current: CareSnapshot) => CareSnapshot) => setSnapshot(recipe);
+    const commit = (recipe: (current: CareSnapshot) => CareSnapshot) => {
+      const stored = readPreview(user.email);
+      if (stored) {
+        writePreview(user.email, recipe(stored));
+        return;
+      }
+      setSessionSnapshot(recipe);
+    };
     const updateChat = (id: string, recipe: (current: ChatSession) => ChatSession) => {
       setChatSessions((current) => current.map((session) => session.id === id ? recipe(session) : session));
     };
@@ -333,7 +361,7 @@ export function CareProvider({ user, initialData, children }: { user: CareUser; 
   }, [activeChat, chatSessions, initialData, policyId, router, saving, snapshot, user]);
 
   return <CareContext.Provider value={value}>
-    {initialData.mode === "fallback" ? <div className={styles.dataBanner} role="status"><span>{initialData.message}</span><button onClick={() => router.refresh()} type="button">Retry database</button></div> : <div className={styles.dataConnected} role="status">Oracle connected</div>}
+    {initialData.mode === "fallback" ? <div className={styles.dataBanner} role="status"><span>{initialData.message}</span><button onClick={() => router.refresh()} type="button">Retry database</button></div> : null}
     {children}
   </CareContext.Provider>;
 }

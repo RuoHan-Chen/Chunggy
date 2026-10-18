@@ -19,7 +19,7 @@ export function Authed({
     <Suspense
       fallback={
         <div className={styles.loadingPlain}>
-          <p>Loading Chunggy…</p>
+          <p>Loading Assurance…</p>
         </div>
       }
     >
@@ -40,7 +40,7 @@ async function AuthedGate({
   if (!session?.user) redirect("/login");
 
   const user = {
-    name: session.user.name || "Chunggy member",
+    name: session.user.name || "Assurance member",
     email: session.user.email || "",
     image: session.user.image ?? null,
   };

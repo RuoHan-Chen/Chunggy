@@ -1,4 +1,4 @@
-# How to set up Chunggy
+# How to set up Assurance
 
 This guide takes a teammate from a fresh clone to the Google-protected Oracle dashboard. The application runs locally, but it connects to the shared Oracle Autonomous Database over an encrypted wallet connection.
 
@@ -251,7 +251,7 @@ The safest teammate workflow is:
 
 ## Shared VM setup
 
-When Chunggy runs on a VM, place the wallet on the VM and configure the VM's environment separately:
+When Assurance runs on a VM, place the wallet on the VM and configure the VM's environment separately:
 
 ```ini
 ORACLE_WALLET_LOCATION=/opt/chunggy/secrets/oracle-wallet
@@ -267,9 +267,9 @@ Users     -> HTTPS  -> Next.js app on VM
 On the VM:
 
 - Store the wallet and environment file outside the Git checkout.
-- Restrict them to the operating-system account that runs Chunggy.
+- Restrict them to the operating-system account that runs Assurance.
 - Use one stable `AUTH_SECRET` for the deployed application.
-- Use an Oracle application account with only the permissions Chunggy needs.
+- Use an Oracle application account with only the permissions Assurance needs.
 - Run `npm ci`, `npm run build`, and `npm run start` during deployment.
 - Put an HTTPS reverse proxy or load balancer in front of the Next.js server.
 - Add the VM's public HTTPS callback URL to the Google OAuth client.

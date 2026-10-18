@@ -56,7 +56,7 @@ async function ChatGate() {
         <header className={styles.dashboardHeader}>
           <div className={styles.wordmark}>
             <span>C</span>
-            Chunggy
+            Assurance
           </div>
           <nav className={styles.headerNav}>
             <Link href="/dashboard">Dashboard</Link>
