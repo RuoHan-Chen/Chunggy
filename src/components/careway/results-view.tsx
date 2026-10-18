@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 
 import { IconPin, IconTooth } from "@/components/careway/icons";
 import { useCare } from "@/components/careway/provider";
-import type { Slot } from "@/lib/careway/model";
+import { visitTypeLabel, type Slot } from "@/lib/careway/model";
 import styles from "@/components/careway/careway.module.css";
 
 export function ResultsView() {
@@ -16,8 +16,8 @@ export function ResultsView() {
     ? saved.options
     : care.providerSlots.filter((slot) => slot.visitType === care.preferences.visitType);
   const summary = saved
-    ? `${saved.visitType} · Near ${saved.postalCode ?? "your ZIP"} within ${saved.radiusMiles} miles · ${saved.timePreference ?? "any time"}`
-    : `${care.preferences.visitType} · ${care.preferences.location} · ${care.preferences.preferredTimes}`;
+    ? `${visitTypeLabel(saved.visitType)} · Near ${saved.postalCode ?? "your ZIP"} within ${saved.radiusMiles} miles · ${saved.timePreference ?? "any time"}`
+    : `${visitTypeLabel(care.preferences.visitType)} · ${care.preferences.location} · ${care.preferences.preferredTimes}`;
 
   function choose(slot: Slot) {
     care.selectSlot(slot);
@@ -40,7 +40,7 @@ export function ResultsView() {
         {slots.length === 0 ? (
           <section className={styles.card}>
             <h2>No provider listings yet</h2>
-            <p>No providers matched {saved?.visitType ?? care.preferences.visitType} with the current filters.</p>
+            <p>No providers matched {visitTypeLabel(saved?.visitType ?? care.preferences.visitType)} with the current filters.</p>
           </section>
         ) : null}
         {slots.map((slot) => {
@@ -57,7 +57,7 @@ export function ResultsView() {
                 </span>
                 <div>
                   <h2>{slot.provider}</h2>
-                  <p>{slot.visitType}</p>
+                  <p>{visitTypeLabel(slot.visitType)}</p>
                   <p>
                     <IconPin /> {slot.address}, {slot.cityLine}
                   </p>

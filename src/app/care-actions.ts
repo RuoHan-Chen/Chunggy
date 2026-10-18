@@ -1,9 +1,18 @@
 "use server";
 
 import { auth } from "@/auth";
-import { digits, parseDob, type Appointment, type CareSaveResult, type Profile, type SavedCareRequest } from "@/lib/careway/model";
+import { digits, parseDob, type Appointment, type BookingStep, type CareSaveResult, type ChatContextItem, type ChatProvider, type ChatSession, type Preferences, type Profile, type SavedCareRequest } from "@/lib/careway/model";
 import { cancelSavedAppointment, requestSavedAppointment } from "@/server/database/repositories/appointments";
 import { syncCareRequest } from "@/server/database/repositories/care-requests";
+import {
+  addConversationContext,
+  completeAssistantMessage,
+  ConversationAccessError,
+  deleteConversation,
+  openConversation,
+  recordConversationTurn,
+  type StoredMessageInput,
+} from "@/server/database/repositories/conversations";
 import { deleteInsurancePolicies, listInsurancePolicies, saveInsurancePolicy } from "@/server/database/repositories/insurance";
 import { findPatientProfile, savePatientProfile } from "@/server/database/repositories/profiles";
 import { resolveDatabaseUser } from "@/server/care-data";
@@ -185,6 +194,92 @@ export async function cancelAppointmentAction(
       appointment: null,
       message: error instanceof Error ? error.message : "The appointment could not be cancelled.",
     };
+  }
+}
+
+export type ConversationActionResult = {
+  ok: boolean;
+  message: string;
+  session: ChatSession | null;
+};
+
+function conversationFailure(error: unknown, fallback: string): ConversationActionResult {
+  if (error instanceof ConversationAccessError) {
+    return { ok: false, message: error.message, session: null };
+  }
+  console.error(fallback, error);
+  return {
+    ok: false,
+    message: error instanceof Error ? error.message : fallback,
+    session: null,
+  };
+}
+
+export async function openConversationAction(conversationId: string): Promise<ConversationActionResult> {
+  try {
+    const user = await authenticatedUser();
+    const session = await openConversation(user.userId, conversationId);
+    if (!session) return { ok: false, message: "Conversation not found", session: null };
+    return { ok: true, message: "Conversation loaded.", session };
+  } catch (error) {
+    return conversationFailure(error, "Conversation could not be loaded.");
+  }
+}
+
+export async function recordConversationAction(input: {
+  conversationId: string | null;
+  title: string;
+  provider: ChatProvider;
+  bookingStep: BookingStep;
+  preferences: Preferences;
+  messages: StoredMessageInput[];
+  context: ChatContextItem[];
+}): Promise<ConversationActionResult> {
+  try {
+    const user = await authenticatedUser();
+    const session = await recordConversationTurn({ ...input, userId: user.userId });
+    return { ok: true, message: "Conversation saved.", session };
+  } catch (error) {
+    return conversationFailure(error, "Conversation could not be saved.");
+  }
+}
+
+export async function completeAssistantAction(input: {
+  conversationId: string;
+  replaceMessageId: string | null;
+  message: StoredMessageInput;
+}): Promise<ConversationActionResult> {
+  try {
+    const user = await authenticatedUser();
+    const session = await completeAssistantMessage({ ...input, userId: user.userId });
+    return { ok: true, message: "Assistant reply saved.", session };
+  } catch (error) {
+    return conversationFailure(error, "Assistant reply could not be saved.");
+  }
+}
+
+export async function addConversationContextAction(
+  conversationId: string,
+  item: ChatContextItem,
+): Promise<ConversationActionResult> {
+  try {
+    const user = await authenticatedUser();
+    const session = await addConversationContext({ userId: user.userId, conversationId, item });
+    if (!session) return { ok: false, message: "Conversation not found", session: null };
+    return { ok: true, message: "Context saved.", session };
+  } catch (error) {
+    return conversationFailure(error, "Context could not be saved.");
+  }
+}
+
+export async function deleteConversationAction(conversationId: string): Promise<ConversationActionResult> {
+  try {
+    const user = await authenticatedUser();
+    const deleted = await deleteConversation(user.userId, conversationId);
+    if (!deleted) return { ok: false, message: "Conversation not found", session: null };
+    return { ok: true, message: "Conversation removed.", session: null };
+  } catch (error) {
+    return conversationFailure(error, "Conversation could not be removed.");
   }
 }
 

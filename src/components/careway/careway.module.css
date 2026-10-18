@@ -1006,6 +1006,19 @@
   line-height: 1.4;
 }
 
+.chatError button {
+  justify-self: start;
+  margin-top: 4px;
+  padding: 6px 12px;
+  border: 1px solid #fecdd3;
+  border-radius: 999px;
+  background: #fff;
+  color: #9f1239;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
 .composer input[type="text"],
 .composer input:not([type="file"]) {
   min-width: 0;

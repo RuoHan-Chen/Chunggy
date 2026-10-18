@@ -10,7 +10,10 @@ const expectedTables = [
   "APPOINTMENT_TYPES",
   "CARE_REQUESTS",
   "CARE_REQUEST_CODES",
+  "CONVERSATIONS",
+  "CONVERSATION_CONTEXT",
   "INSURANCE_POLICIES",
+  "MESSAGES",
   "OUTREACH_ATTEMPTS",
   "PATIENT_PROFILES",
   "PROVIDER_LOCATIONS",
@@ -61,6 +64,10 @@ async function main() {
   } catch (error) {
     console.error(error instanceof Error ? error.message : "Database verification failed");
     process.exitCode = 1;
+  } finally {
+    const { getPool } = await import("../../src/lib/db");
+    const pool = await getPool().catch(() => null);
+    await pool?.close(0);
   }
 }
 

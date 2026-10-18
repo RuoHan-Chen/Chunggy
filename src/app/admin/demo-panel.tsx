@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useSyncExternalStore } from "react";
 
+import { visitTypeLabel } from "@/lib/careway/model";
 import {
   clearPreview,
   emptyPreview,
@@ -41,7 +42,7 @@ export function DemoPanel({ email, name }: { email: string; name: string }) {
       {preview ? (
         <ul className={styles.facts}>
           <li>Booking step: {preview.bookingStep}</li>
-          <li>Visit: {preview.preferences.visitType}</li>
+          <li>Visit: {visitTypeLabel(preview.preferences.visitType)}</li>
           <li>ZIP: {preview.profile.zip || "none"}</li>
           <li>Messages: {preview.messages.length}</li>
         </ul>

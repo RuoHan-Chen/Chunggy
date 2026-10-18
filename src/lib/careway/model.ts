@@ -68,6 +68,8 @@ export type ChatMessage = {
   time: string;
   provider?: ChatProvider;
   model?: string;
+  status?: "complete" | "failed";
+  error?: string | null;
 };
 
 export type ChatProvider = "openai" | "oci";
@@ -102,6 +104,9 @@ export type ChatSession = {
   provider: ChatProvider;
   pending: boolean;
   error: string | null;
+  stored: boolean;
+  messagesLoaded: boolean;
+  messageCount: number;
 };
 
 export type BookingStep = "idle" | "visit" | "location" | "time" | "payment" | "ready";
@@ -133,6 +138,7 @@ export type CareBootstrap = {
   providerSlots: Slot[];
   savedCareRequest: SavedCareRequest | null;
   appointments: Appointment[];
+  conversations: ChatSession[];
   message: string | null;
 };
 
@@ -144,6 +150,17 @@ export type CareSaveResult = {
 };
 
 export const visitTypes = ["dental", "eye", "annual", "other"];
+
+const visitTypeLabels: Record<(typeof visitTypes)[number], string> = {
+  dental: "Dental visit",
+  eye: "Eye exam",
+  annual: "Annual physical",
+  other: "Other visit",
+};
+
+export function visitTypeLabel(visitType: string) {
+  return visitTypeLabels[visitType as (typeof visitTypes)[number]] ?? visitType;
+}
 
 export const timeChoices = [
   "Weekday mornings",
@@ -235,6 +252,14 @@ export function seedMessages(): ChatMessage[] {
   ];
 }
 
+export function chatFollowUpError(messages: ChatMessage[]) {
+  const last = messages.at(-1);
+  if (!last) return null;
+  if (last.status === "failed") return last.error || last.text;
+  if (last.role === "user") return "This request did not finish. You can retry it.";
+  return null;
+}
+
 export function chatTitleFromMessage(text: string) {
   const normalized = text.trim().replace(/\s+/g, " ");
   if (!normalized) return "New chat";
@@ -256,6 +281,9 @@ export function chatFromSnapshot(snapshot: CareSnapshot, id = "chat-initial"): C
     provider: "oci",
     pending: false,
     error: null,
+    stored: false,
+    messagesLoaded: true,
+    messageCount: snapshot.messages.length,
   };
 }
 
@@ -277,6 +305,9 @@ export function emptyChatSession(profile: Profile, id: string): ChatSession {
     provider: "oci",
     pending: false,
     error: null,
+    stored: false,
+    messagesLoaded: true,
+    messageCount: 0,
   };
 }
 
@@ -668,7 +699,7 @@ export function isLegacyBookingSeed(messages: ChatMessage[]) {
 }
 
 export function bookingChoices(step: BookingStep, zip: string) {
-  if (step === "visit") return visitTypes;
+  if (step === "visit") return visitTypes.map(visitTypeLabel);
   if (step === "location") return zip ? [`Use ${zip}`] : [];
   if (step === "time") return timeChoices;
   if (step === "payment") return ["Insurance", "Self-pay", "Decide later"];
@@ -751,18 +782,23 @@ function nextBookingStep(known: { visit: boolean; location: boolean; time: boole
   return "ready";
 }
 
+function visitPhrase(visitType: string) {
+  if (visitType === "other") return "another visit";
+  const label = visitTypeLabel(visitType).toLowerCase();
+  return `${/^[aeiou]/i.test(label) ? "an" : "a"} ${label}`;
+}
+
 function bookingReply(step: BookingStep, preferences: Preferences, zip: string, payment: PaymentChoice) {
-  const visit = preferences.visitType;
-  const article = /^[aeiou]/i.test(visit) ? "an" : "a";
+  const visit = visitTypeLabel(preferences.visitType).toLowerCase();
   if (step === "visit") return "What kind of visit do you want?";
-  if (step === "location") return `I can book ${article} ${visit} visit. Which ZIP should I search near?`;
+  if (step === "location") return `I can book ${visitPhrase(preferences.visitType)}. Which ZIP should I search near?`;
   if (step === "time") return `I’ll look near ${zip || "your ZIP"}. What time of day works best?`;
   if (step === "payment") return `${preferences.preferredTimes}. How do you want to pay?`;
-  return `I can look for ${visit} visits ${preferences.location.toLowerCase()}, ${preferences.preferredTimes.toLowerCase()}, ${paymentTitle(payment).toLowerCase()}. I can show options when you’re ready.`;
+  return `I can look for ${visit} options ${preferences.location.toLowerCase()}, ${preferences.preferredTimes.toLowerCase()}, ${paymentTitle(payment).toLowerCase()}. I can show options when you’re ready.`;
 }
 
 function bookingNudge(step: BookingStep) {
-  if (step === "visit") return "Choose dental, eye, annual, or other.";
+  if (step === "visit") return "Choose a dental visit, eye exam, annual physical, or other visit.";
   if (step === "location") return "Send a 5-digit ZIP, or use the one on your profile.";
   if (step === "time") return "Choose weekday mornings, weekday afternoons, or flexible.";
   if (step === "payment") return "Choose insurance, self-pay, or decide later.";
@@ -776,6 +812,7 @@ function wantsBooking(text: string) {
 function detectVisit(text: string) {
   const lower = text.toLowerCase();
   if (visitTypes.includes(lower.trim())) return lower.trim();
+  if (lower.trim() === "other visit") return "other";
   if (/\b(eye|vision|optical)\b/.test(lower)) return "eye";
   if (/\b(dental|dentist|tooth|teeth)\b/.test(lower)) return "dental";
   if (/\b(annual|physical|primary)\b/.test(lower)) return "annual";
@@ -811,7 +848,7 @@ function generalReply(text: string) {
   if (lower.includes("insurance")) {
     return "You can use insurance, pay yourself, or decide when you book. Coverage still needs a check before anyone treats it as verified.";
   }
-  return "Tell me the visit you want, such as dental, eye, annual, or other. I’ll ask where, when, and how you want to pay.";
+  return "Tell me the visit you want, such as a dental visit, eye exam, annual physical, or other visit. I’ll ask where, when, and how you want to pay.";
 }
 
 export function toIcs(appointment: Appointment, name: string) {
@@ -825,7 +862,7 @@ export function toIcs(appointment: Appointment, name: string) {
     `DTSTAMP:${stamp}`,
     `DTSTART:${appointment.startIso}`,
     `DTEND:${appointment.endIso}`,
-    `SUMMARY:${appointment.visitType} at ${appointment.provider}`,
+    `SUMMARY:${visitTypeLabel(appointment.visitType)} at ${appointment.provider}`,
     `LOCATION:${appointment.address}, ${appointment.cityLine}`,
     `DESCRIPTION:${appointment.simulated ? "Simulated appointment request" : "Appointment"} for ${name}. Reference ${appointment.reference}.`,
     "END:VEVENT",

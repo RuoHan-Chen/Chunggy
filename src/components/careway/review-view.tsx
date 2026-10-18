@@ -6,7 +6,7 @@ import { useState } from "react";
 
 import { IconCalendar, IconCard, IconCheck, IconClock, IconPin, IconTooth, IconUser } from "@/components/careway/icons";
 import { useCare } from "@/components/careway/provider";
-import { bornLabel, digits, formatPhone, parseDob, paymentTitle } from "@/lib/careway/model";
+import { bornLabel, digits, formatPhone, parseDob, paymentTitle, visitTypeLabel } from "@/lib/careway/model";
 import styles from "@/components/careway/careway.module.css";
 
 export function ReviewView() {
@@ -137,7 +137,7 @@ export function ReviewView() {
                 <IconTooth />
               </span>
               <div>
-                <strong>{slot.visitType}</strong>
+                <strong>{visitTypeLabel(slot.visitType)}</strong>
                 <p>{slot.provider}</p>
                 <p>
                   <IconCalendar /> {slot.dateLabel}
@@ -308,7 +308,7 @@ export function ReviewView() {
 
         <aside className={styles.summaryCard}>
           <h2>Booking summary</h2>
-          <strong>{slot.visitType}</strong>
+          <strong>{visitTypeLabel(slot.visitType)}</strong>
           <p>{slot.provider}</p>
           <p>
             <IconCalendar /> {slot.dateLabel}

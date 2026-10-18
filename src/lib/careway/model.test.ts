@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   bookingTurn,
+  chatFollowUpError,
   defaultPreferences,
   defaultProfile,
   type BookingStep,
@@ -49,6 +50,13 @@ describe("bookingTurn", () => {
     expect(turn.reply).toContain("Which ZIP");
   });
 
+  it("accepts the professional visit labels", () => {
+    const turn = bookingTurn("Other visit", "visit", defaultPreferences(), defaultProfile());
+
+    expect(turn.preferences.visitType).toBe("other");
+    expect(turn.step).toBe("location");
+  });
+
   it("keeps non-booking questions outside the booking workflow", () => {
     const preferences = defaultPreferences();
     const profile = defaultProfile();
@@ -57,5 +65,20 @@ describe("bookingTurn", () => {
     expect(turn.step).toBe("idle");
     expect(turn.preferences).toBe(preferences);
     expect(turn.reply).toContain("self-pay ranges");
+  });
+});
+
+describe("chatFollowUpError", () => {
+  it("keeps a failed model reply visible", () => {
+    expect(chatFollowUpError([
+      { id: "user", role: "user", text: "What is a copay?", time: "9:00 AM", status: "complete" },
+      { id: "assistant", role: "assistant", text: "GPT rejected the request.", time: "9:00 AM", status: "failed", error: "GPT rejected the request." },
+    ])).toBe("GPT rejected the request.");
+  });
+
+  it("offers a retry when the user message was saved and the reply never arrived", () => {
+    expect(chatFollowUpError([
+      { id: "user", role: "user", text: "What is a copay?", time: "9:00 AM", status: "complete" },
+    ])).toBe("This request did not finish. You can retry it.");
   });
 });

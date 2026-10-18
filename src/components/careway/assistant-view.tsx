@@ -65,7 +65,10 @@ export function AssistantView() {
   }
 
   function removeChat(id: string, title: string) {
-    if (!window.confirm(`Delete “${title}”? This temporary chat cannot be recovered.`)) return;
+    const warning = care.chatStorage === "account"
+      ? `Delete “${title}”? It will be removed from your account.`
+      : `Delete “${title}”? This chat cannot be recovered after you refresh.`;
+    if (!window.confirm(warning)) return;
     care.deleteChat(id);
     if (renamingId === id) setRenamingId(null);
   }
@@ -106,7 +109,7 @@ export function AssistantView() {
                   ) : (
                     <button className={styles.chatSessionButton} onClick={() => care.switchChat(session.id)} type="button">
                       <span>{session.title}</span>
-                      <small>{session.messages.length === 0 ? "No messages" : `${session.messages.length} messages`}</small>
+                      <small>{(session.messagesLoaded ? session.messages.length : session.messageCount) === 0 ? "No messages" : `${session.messagesLoaded ? session.messages.length : session.messageCount} messages`}</small>
                     </button>
                   )}
                   <div className={styles.chatSessionActions}>
@@ -117,14 +120,22 @@ export function AssistantView() {
               );
             })}
           </div>
-          <p className={styles.temporaryNotice}>Chats are temporary in Phase 2 and reset when you refresh.</p>
+          <p className={styles.temporaryNotice}>
+            {care.chatStorage === "account"
+              ? "Conversations you start are saved to your account and stay available after you refresh."
+              : "Chats stay in this session and reset when you refresh."}
+          </p>
         </aside>
 
         <section className={styles.chatCard}>
           <div className={styles.chatTopbar}>
             <div>
               <strong>{care.activeChat.title}</strong>
-              <small>Temporary chat · model replies are not saved</small>
+              <small>
+                {care.chatStorage === "account"
+                  ? care.activeChat.stored ? "Saved to your account" : "Saves with your next message"
+                  : "This chat stays in this session"}
+              </small>
             </div>
             <div className={styles.chatTools}>
               <div aria-label="AI provider" className={styles.providerToggle} role="group">
@@ -240,10 +251,11 @@ export function AssistantView() {
               </div>
             ) : null}
           </div>
-          {care.activeChat.error ? (
+          {care.activeChat.error && !care.activeChat.pending ? (
             <div className={styles.chatError} role="alert">
               <strong>Message not completed</strong>
               <span>{care.activeChat.error}</span>
+              <button onClick={() => void care.retryMessage()} type="button">Retry</button>
             </div>
           ) : null}
           <form

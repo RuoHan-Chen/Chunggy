@@ -4,7 +4,7 @@ import Link from "next/link";
 
 import { IconCalendar, IconPin } from "@/components/careway/icons";
 import { useCare } from "@/components/careway/provider";
-import { isOpenAppointment } from "@/lib/careway/model";
+import { isOpenAppointment, visitTypeLabel } from "@/lib/careway/model";
 import styles from "@/components/careway/careway.module.css";
 
 export function AppointmentsView() {
@@ -25,7 +25,7 @@ export function AppointmentsView() {
           {upcoming.length > 0 ? upcoming.map((item) => (
             <article className={styles.visitRow} key={item.appointmentId ?? item.reference}>
               <div>
-                <strong>{item.visitType}</strong>
+                <strong>{visitTypeLabel(item.visitType)}</strong>
                 <p>{item.provider}</p>
                 <p>{item.simulated ? "Simulated request · office not contacted" : item.status}</p>
                 <p>
@@ -57,7 +57,7 @@ export function AppointmentsView() {
           {cancelled.length > 0 ? cancelled.map((item) => (
             <article className={styles.visitRow} key={item.appointmentId ?? item.reference}>
               <div>
-                <strong>{item.visitType}</strong>
+                <strong>{visitTypeLabel(item.visitType)}</strong>
                 <p>
                   {item.provider} · {item.dateLabel}
                 </p>

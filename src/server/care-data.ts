@@ -16,6 +16,7 @@ import {
   type Slot,
 } from "@/lib/careway/model";
 import { listAppointments } from "@/server/database/repositories/appointments";
+import { loadUserConversations } from "@/server/database/repositories/conversations";
 import { listInsurancePolicies } from "@/server/database/repositories/insurance";
 import { findPatientProfile } from "@/server/database/repositories/profiles";
 import { findOpenCareRequest } from "@/server/database/repositories/care-requests";
@@ -74,7 +75,7 @@ export async function loadCareBootstrap(session: Session): Promise<CareBootstrap
   const name = session.user?.name || "Assurance member";
   try {
     const user = await resolveDatabaseUser(session);
-    const [record, policies, providerGroups, savedCareRequest, appointments] = await Promise.all([
+    const [record, policies, providerGroups, savedCareRequest, appointments, conversations] = await Promise.all([
       findPatientProfile(user.userId),
       listInsurancePolicies(user.userId),
       Promise.all(
@@ -87,6 +88,10 @@ export async function loadCareBootstrap(session: Session): Promise<CareBootstrap
         throw error;
       }),
       listAppointments(user.userId).catch((error: { errorNum?: number }) => {
+        if (error?.errorNum === 942) return [];
+        throw error;
+      }),
+      loadUserConversations(user.userId).catch((error: { errorNum?: number }) => {
         if (error?.errorNum === 942) return [];
         throw error;
       }),
@@ -127,6 +132,7 @@ export async function loadCareBootstrap(session: Session): Promise<CareBootstrap
       providerSlots: slotsFromProviders(providerGroups.flat()),
       savedCareRequest,
       appointments,
+      conversations,
       message: null,
     };
   } catch (error) {
@@ -138,6 +144,7 @@ export async function loadCareBootstrap(session: Session): Promise<CareBootstrap
       providerSlots: slotsFor("dental", "Flexible"),
       savedCareRequest: null,
       appointments: [],
+      conversations: [],
       message: "Development data — database disconnected. Changes last only for this browser session.",
     };
   }

@@ -9,7 +9,7 @@ import {
   IconUser,
 } from "@/components/careway/icons";
 import { useCare } from "@/components/careway/provider";
-import { digits, firstName, isOpenAppointment } from "@/lib/careway/model";
+import { digits, firstName, isOpenAppointment, visitTypeLabel } from "@/lib/careway/model";
 import styles from "@/components/careway/careway.module.css";
 
 export function HomeView() {
@@ -47,7 +47,7 @@ export function HomeView() {
           {visit ? (
             <>
               <p className={styles.kicker}>Upcoming</p>
-              <h2>{visit.visitType}</h2>
+              <h2>{visitTypeLabel(visit.visitType)}</h2>
               <p className={styles.provider}>{visit.provider}</p>
               <ul className={styles.detailList}>
                 <li>

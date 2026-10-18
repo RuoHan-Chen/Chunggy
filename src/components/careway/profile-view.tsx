@@ -6,6 +6,7 @@ import { IconChevronDown, IconDoc } from "@/components/careway/icons";
 import { useCare } from "@/components/careway/provider";
 import {
   aboutErrors,
+  visitTypeLabel,
   formatDob,
   formatPhone,
   insuranceErrors,
@@ -428,7 +429,7 @@ export function ProfileView({ initialTab = "Insurance" }: { initialTab?: Tab }) 
           <h2>Booking preferences</h2>
           <label className={styles.field}>
             Visit type
-            <input className={styles.input} readOnly value={care.preferences.visitType} />
+            <input className={styles.input} readOnly value={visitTypeLabel(care.preferences.visitType)} />
           </label>
           <label className={styles.field}>
             Location
