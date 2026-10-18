@@ -81,5 +81,10 @@ export function getIntegrationStatus() {
       "OCI_GENAI_COMPARTMENT_ID",
       "OCI_GENAI_MODEL_ID",
     ]),
+    vapi: isConfigured([
+      "VAPI_PRIVATE_API_KEY",
+      "VAPI_ASSISTANT_ID",
+      "VAPI_INSURANCE_OUTPUT_ID",
+    ]),
   };
 }
