@@ -58,7 +58,11 @@ export type ChatMessage = {
   role: "user" | "assistant";
   text: string;
   time: string;
+  provider?: ChatProvider;
+  model?: string;
 };
+
+export type ChatProvider = "openai" | "oci";
 
 export type ChatContextItem = {
   id: string;
@@ -76,6 +80,9 @@ export type ChatSession = {
   bookingStep: BookingStep;
   preferences: Preferences;
   context: ChatContextItem[];
+  provider: ChatProvider;
+  pending: boolean;
+  error: string | null;
 };
 
 export type BookingStep = "idle" | "visit" | "location" | "time" | "payment" | "ready";
@@ -225,6 +232,9 @@ export function chatFromSnapshot(snapshot: CareSnapshot, id = "chat-initial"): C
     bookingStep: snapshot.bookingStep ?? inferBookingStep(snapshot.messages),
     preferences: snapshot.preferences,
     context: [],
+    provider: "oci",
+    pending: false,
+    error: null,
   };
 }
 
@@ -243,6 +253,9 @@ export function emptyChatSession(profile: Profile, id: string): ChatSession {
       paymentLabel: paymentLabel(profile.payment),
     },
     context: [],
+    provider: "oci",
+    pending: false,
+    error: null,
   };
 }
 

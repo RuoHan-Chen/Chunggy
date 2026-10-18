@@ -1,6 +1,6 @@
 # Chunggy
 
-Chunggy is a Next.js application foundation for Oracle Database, Google authentication, and the OpenAI API. It now includes the first Oracle-backed patient workflow; appointment booking and healthcare automation remain preview-only.
+Chunggy is a Next.js care-navigation application using Oracle Database, Google authentication, OpenAI, and OCI Generative AI. It includes an Oracle-backed patient profile, guided appointment discovery, and temporary AI conversations.
 
 ## Current implementation
 
@@ -23,11 +23,11 @@ Chunggy is a Next.js application foundation for Oracle Database, Google authenti
 - [x] Oracle provider listings with an explicit development fallback when disconnected
 - [x] Profile save/remove status and retry UI (no browser persistence for database-backed fields)
 - [x] Frontend-only multi-conversation assistant with starter prompts and importable context
+- [x] Per-conversation GPT/OCI Generative AI toggle with authenticated model replies
 - [x] Vitest unit tests and Playwright API smoke-test setup
 - [ ] Google OAuth sign-in verification
 - [ ] OpenAI API key and live request verification
 - [ ] Oracle-backed conversation persistence
-- [ ] Connect the assistant interface to an authenticated AI endpoint
 
 ## Run locally
 
@@ -65,7 +65,7 @@ AUTH_GOOGLE_SECRET=
 
 # OpenAI
 OPENAI_API_KEY=
-# OPENAI_MODEL=
+OPENAI_MODEL=
 
 # OCI Generative AI
 OCI_GENAI_AUTH_MODE=config_file
@@ -87,8 +87,9 @@ For Google OAuth, configure the development callback URL as `http://localhost:30
 | `GET/POST /api/auth/*` | Auth.js handlers for Google OAuth | Auth.js and Google |
 | `GET /dashboard` | Authenticated, read-only Oracle schema overview | Auth.js, Google, and Oracle |
 | `POST /api/chat/oracle` | Sends an authenticated prompt to OCI Generative AI | Auth.js and OCI Generative AI |
+| `POST /api/chat/openai` | Sends an authenticated prompt to OpenAI | Auth.js and OpenAI |
 
-The OpenAI client is initialized only when it is first used, so missing API keys do not break local builds. The official SDK automatically reads server credentials, and this project keeps all OpenAI access out of browser code.
+The assistant toggle selects either the OpenAI or OCI route. Both routes run on the server, require a signed-in user, accept bounded recent conversation/context data, and keep API credentials out of the browser. Missing credentials produce a visible provider-specific error without breaking the rest of the workflow.
 
 The OCI route uses Oracle's official SDK with an OCI config-file profile locally and instance-principal authentication on an OCI VM. It does not use a Generative AI Project API key.
 

@@ -75,7 +75,7 @@ export function getIntegrationStatus() {
       "AUTH_GOOGLE_ID",
       "AUTH_GOOGLE_SECRET",
     ]),
-    openai: isConfigured(["OPENAI_API_KEY"]),
+    openai: isConfigured(["OPENAI_API_KEY", "OPENAI_MODEL"]),
     oracleAi: isConfigured([
       "OCI_GENAI_REGION",
       "OCI_GENAI_COMPARTMENT_ID",

@@ -37,7 +37,7 @@ export function AssistantView() {
       ? `${trimmed}${trimmed ? " " : ""}(file: ${attachment})`
       : trimmed;
     if (!message) return;
-    care.sendMessage(message);
+    void care.sendMessage(message);
     if (choice === undefined) {
       setDraft("");
       setAttachment("");
@@ -126,13 +126,35 @@ export function AssistantView() {
           <div className={styles.chatTopbar}>
             <div>
               <strong>{care.activeChat.title}</strong>
-              <small>Not saved to Oracle yet</small>
+              <small>Temporary chat · model replies are not saved</small>
             </div>
-            {care.appointment ? (
-              <button className={styles.contextButton} onClick={care.importAppointmentContext} type="button">
-                + Appointment context
-              </button>
-            ) : null}
+            <div className={styles.chatTools}>
+              <div aria-label="AI provider" className={styles.providerToggle} role="group">
+                <button
+                  aria-pressed={care.activeChat.provider === "openai"}
+                  className={care.activeChat.provider === "openai" ? styles.providerToggleActive : undefined}
+                  disabled={care.activeChat.pending}
+                  onClick={() => care.setChatProvider("openai")}
+                  type="button"
+                >
+                  GPT
+                </button>
+                <button
+                  aria-pressed={care.activeChat.provider === "oci"}
+                  className={care.activeChat.provider === "oci" ? styles.providerToggleActive : undefined}
+                  disabled={care.activeChat.pending}
+                  onClick={() => care.setChatProvider("oci")}
+                  type="button"
+                >
+                  OCI GenAI
+                </button>
+              </div>
+              {care.appointment ? (
+                <button className={styles.contextButton} onClick={care.importAppointmentContext} type="button">
+                  + Appointment context
+                </button>
+              ) : null}
+            </div>
           </div>
 
           {care.activeChat.context.length > 0 ? (
@@ -172,15 +194,24 @@ export function AssistantView() {
                   <span className={styles.botAvatar}><IconBot /></span>
                   <div>
                     <p className={styles.botBubble}>{message.text}</p>
-                    <time>{message.time}</time>
+                    <time>
+                      {message.provider ? `${message.provider === "openai" ? "GPT" : "OCI GenAI"}${message.model ? ` · ${message.model}` : ""} · ` : ""}
+                      {message.time}
+                    </time>
                   </div>
                 </div>
               ),
             )}
+            {care.activeChat.pending ? (
+              <div aria-live="polite" className={styles.botGroup}>
+                <span className={styles.botAvatar}><IconBot /></span>
+                <p className={styles.typingBubble}>Thinking…</p>
+              </div>
+            ) : null}
             {choices.length > 0 ? (
               <div className={styles.chips}>
                 {choices.map((choice) => (
-                  <button className={styles.chip} key={choice} onClick={() => submit(choice)} type="button">{choice}</button>
+                  <button className={styles.chip} disabled={care.activeChat.pending} key={choice} onClick={() => submit(choice)} type="button">{choice}</button>
                 ))}
               </div>
             ) : null}
@@ -190,6 +221,12 @@ export function AssistantView() {
               </div>
             ) : null}
           </div>
+          {care.activeChat.error ? (
+            <div className={styles.chatError} role="alert">
+              <strong>Message not completed</strong>
+              <span>{care.activeChat.error}</span>
+            </div>
+          ) : null}
           <form
             className={styles.composer}
             onSubmit={(event) => {
@@ -201,6 +238,7 @@ export function AssistantView() {
               <IconPaperclip />
               <span className={styles.srOnly}>Attach a file</span>
               <input
+                disabled={care.activeChat.pending}
                 onChange={(event) => {
                   const file = event.target.files?.[0];
                   if (file) setAttachment(file.name);
@@ -209,12 +247,13 @@ export function AssistantView() {
               />
             </label>
             <input
+              disabled={care.activeChat.pending}
               onChange={(event) => setDraft(event.target.value)}
               placeholder="Ask a question or tell me what to book"
               value={draft}
             />
             {attachment ? <em className={styles.fileChip}>{attachment}</em> : null}
-            <button aria-label="Send" className={styles.send} type="submit"><IconSend /></button>
+            <button aria-label="Send" className={styles.send} disabled={care.activeChat.pending || (!draft.trim() && !attachment)} type="submit"><IconSend /></button>
           </form>
         </section>
       </div>
