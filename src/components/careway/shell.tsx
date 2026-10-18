@@ -155,7 +155,9 @@ export function AppShell({ children }: { children: ReactNode }) {
             ) : null}
           </div>
         </div>
-        <div className={styles.content}>{children}</div>
+        <div className={`${styles.content} ${pathname === "/assistant" ? styles.contentWide : ""}`}>
+          {children}
+        </div>
       </div>
     </div>
   );
