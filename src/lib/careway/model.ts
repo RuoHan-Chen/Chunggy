@@ -60,6 +60,24 @@ export type ChatMessage = {
   time: string;
 };
 
+export type ChatContextItem = {
+  id: string;
+  kind: "appointment" | "conversation";
+  title: string;
+  body: string;
+};
+
+export type ChatSession = {
+  id: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+  messages: ChatMessage[];
+  bookingStep: BookingStep;
+  preferences: Preferences;
+  context: ChatContextItem[];
+};
+
 export type BookingStep = "idle" | "visit" | "location" | "time" | "payment" | "ready";
 
 export type Notice = {
@@ -187,6 +205,45 @@ export function seedMessages(): ChatMessage[] {
       time: "10:24 AM",
     },
   ];
+}
+
+export function chatTitleFromMessage(text: string) {
+  const normalized = text.trim().replace(/\s+/g, " ");
+  if (!normalized) return "New chat";
+  const words = normalized.split(" ").slice(0, 7).join(" ");
+  return `${words}${normalized.length > words.length ? "…" : ""}`;
+}
+
+export function chatFromSnapshot(snapshot: CareSnapshot, id = "chat-initial"): ChatSession {
+  const firstUserMessage = snapshot.messages.find((message) => message.role === "user")?.text ?? "";
+  return {
+    id,
+    title: chatTitleFromMessage(firstUserMessage),
+    createdAt: "",
+    updatedAt: "",
+    messages: snapshot.messages,
+    bookingStep: snapshot.bookingStep ?? inferBookingStep(snapshot.messages),
+    preferences: snapshot.preferences,
+    context: [],
+  };
+}
+
+export function emptyChatSession(profile: Profile, id: string): ChatSession {
+  const timestamp = new Date().toISOString();
+  return {
+    id,
+    title: "New chat",
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    messages: [],
+    bookingStep: "idle",
+    preferences: {
+      ...defaultPreferences(),
+      location: locationLabel(profile.zip),
+      paymentLabel: paymentLabel(profile.payment),
+    },
+    context: [],
+  };
 }
 
 export function defaultSnapshot(name = ""): CareSnapshot {

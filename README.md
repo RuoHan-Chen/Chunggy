@@ -22,11 +22,12 @@ Chunggy is a Next.js application foundation for Oracle Database, Google authenti
 - [x] Oracle-backed signed-in users, patient profiles, and manually entered insurance
 - [x] Oracle provider listings with an explicit development fallback when disconnected
 - [x] Profile save/remove status and retry UI (no browser persistence for database-backed fields)
+- [x] Frontend-only multi-conversation assistant with starter prompts and importable context
 - [x] Vitest unit tests and Playwright API smoke-test setup
 - [ ] Google OAuth sign-in verification
 - [ ] OpenAI API key and live request verification
 - [ ] Oracle-backed conversation persistence
-- [ ] Authenticated chat endpoint and interface
+- [ ] Connect the assistant interface to an authenticated AI endpoint
 
 ## Run locally
 
@@ -113,7 +114,7 @@ npm run test:e2e
 
 1. Complete a Google sign-in and verify the authenticated dashboard.
 2. Create a least-privilege Oracle application user for deployment.
-3. Add `CONVERSATIONS` and `MESSAGES` migrations after the frontend-only chat-session phase.
+3. Add `CONVERSATIONS` and `MESSAGES` migrations after the frontend-only Phase 2 chat experience.
 4. Save and retrieve per-user conversation history.
 
 ## References

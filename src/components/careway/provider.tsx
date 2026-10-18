@@ -1,14 +1,35 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 
 import { removeInsuranceAction, saveInsuranceAction, saveProfileAction } from "@/app/care-actions";
 import styles from "@/components/careway/careway.module.css";
 import {
-  bookingTurn, clock, inferBookingStep, locationLabel, paymentLabel,
-  type Appointment, type CareBootstrap, type CareSaveResult, type CareSnapshot,
-  type ChatMessage, type Notice, type Preferences, type Profile, type Slot,
+  bookingTurn,
+  chatFromSnapshot,
+  chatTitleFromMessage,
+  clock,
+  emptyChatSession,
+  locationLabel,
+  paymentLabel,
+  type Appointment,
+  type CareBootstrap,
+  type CareSaveResult,
+  type CareSnapshot,
+  type ChatContextItem,
+  type ChatMessage,
+  type ChatSession,
+  type Notice,
+  type Preferences,
+  type Profile,
+  type Slot,
 } from "@/lib/careway/model";
 
 export type CareUser = { name: string; email: string; image: string | null };
@@ -18,6 +39,10 @@ type CareContextValue = {
   saving: boolean; profile: Profile; preferences: Preferences; messages: ChatMessage[];
   bookingStep: CareSnapshot["bookingStep"]; draft: Slot | null; appointment: Appointment | null;
   notices: Notice[]; providerSlots: Slot[]; retryDatabase: () => void;
+  chatSessions: ChatSession[]; activeChatId: string; activeChat: ChatSession;
+  createChat: () => void; switchChat: (id: string) => void;
+  renameChat: (id: string, title: string) => void; deleteChat: (id: string) => void;
+  importAppointmentContext: () => void; importChatContext: (id: string) => void;
   updateProfile: (patch: Partial<Profile>) => void; updatePreferences: (patch: Partial<Preferences>) => void;
   deferOnboarding: () => Promise<CareSaveResult>; completeOnboarding: () => Promise<CareSaveResult>;
   saveProfile: () => Promise<CareSaveResult>; saveInsurance: () => Promise<CareSaveResult>;
@@ -29,14 +54,32 @@ type CareContextValue = {
 
 const CareContext = createContext<CareContextValue | null>(null);
 
+function nextChatId() {
+  return `chat-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+}
+
+function summarizeChat(session: ChatSession) {
+  const summary = session.messages
+    .slice(-2)
+    .map((message) => `${message.role === "user" ? "You" : "Assistant"}: ${message.text}`)
+    .join(" · ");
+  return summary || "This conversation does not have any messages yet.";
+}
+
 export function CareProvider({ user, initialData, children }: { user: CareUser; initialData: CareBootstrap; children: ReactNode }) {
   const router = useRouter();
   const [snapshot, setSnapshot] = useState(initialData.snapshot);
   const [policyId, setPolicyId] = useState(initialData.insurancePolicyId);
   const [saving, setSaving] = useState(false);
+  const [chatSessions, setChatSessions] = useState<ChatSession[]>(() => [chatFromSnapshot(initialData.snapshot)]);
+  const [activeChatId, setActiveChatId] = useState("chat-initial");
+  const activeChat = chatSessions.find((session) => session.id === activeChatId) ?? chatSessions[0];
 
   const value = useMemo<CareContextValue>(() => {
     const commit = (recipe: (current: CareSnapshot) => CareSnapshot) => setSnapshot(recipe);
+    const updateActiveChat = (recipe: (current: ChatSession) => ChatSession) => {
+      setChatSessions((current) => current.map((session) => session.id === activeChat.id ? recipe(session) : session));
+    };
     const sessionOnly = (message: string): CareSaveResult => ({ ok: true, persisted: false, message: `${message} Saved for this session only because Oracle is disconnected.` });
     async function persistProfile(status: "NOT_STARTED" | "DEFERRED" | "COMPLETE") {
       if (initialData.mode === "fallback") return sessionOnly("Profile updated.");
@@ -46,20 +89,73 @@ export function CareProvider({ user, initialData, children }: { user: CareUser; 
 
     return {
       ready: true, user, dataMode: initialData.mode, dataMessage: initialData.message, saving,
-      profile: snapshot.profile, preferences: snapshot.preferences, messages: snapshot.messages,
-      bookingStep: snapshot.bookingStep ?? inferBookingStep(snapshot.messages), draft: snapshot.draft,
+      profile: snapshot.profile, preferences: activeChat.preferences, messages: activeChat.messages,
+      bookingStep: activeChat.bookingStep, draft: snapshot.draft,
       appointment: snapshot.appointment, notices: snapshot.notices, providerSlots: initialData.providerSlots,
+      chatSessions, activeChatId: activeChat.id, activeChat,
       retryDatabase: () => router.refresh(),
-      updateProfile(patch) {
-        commit((current) => {
-          const profile = { ...current.profile, ...patch };
-          const preferences = { ...current.preferences };
-          if (patch.zip !== undefined) preferences.location = locationLabel(profile.zip);
-          if (patch.payment !== undefined) preferences.paymentLabel = paymentLabel(profile.payment);
-          return { ...current, profile, preferences };
-        });
+      createChat() {
+        const session = emptyChatSession(snapshot.profile, nextChatId());
+        setChatSessions((current) => [session, ...current]);
+        setActiveChatId(session.id);
       },
-      updatePreferences: (patch) => commit((current) => ({ ...current, preferences: { ...current.preferences, ...patch } })),
+      switchChat: setActiveChatId,
+      renameChat(id, title) {
+        const trimmed = title.trim();
+        if (!trimmed) return;
+        setChatSessions((current) => current.map((session) => session.id === id ? { ...session, title: trimmed, updatedAt: new Date().toISOString() } : session));
+      },
+      deleteChat(id) {
+        const remaining = chatSessions.filter((session) => session.id !== id);
+        if (remaining.length === 0) {
+          const replacement = emptyChatSession(snapshot.profile, nextChatId());
+          setChatSessions([replacement]);
+          setActiveChatId(replacement.id);
+          return;
+        }
+        setChatSessions(remaining);
+        if (activeChat.id === id) setActiveChatId(remaining[0].id);
+      },
+      importAppointmentContext() {
+        if (!snapshot.appointment) return;
+        const appointment = snapshot.appointment;
+        const item: ChatContextItem = {
+          id: `appointment-${appointment.reference}`,
+          kind: "appointment",
+          title: `${appointment.visitType} appointment`,
+          body: `${appointment.provider} · ${appointment.longDate} at ${appointment.timeLabel} · ${appointment.status}`,
+        };
+        updateActiveChat((session) => session.context.some((context) => context.id === item.id)
+          ? session
+          : { ...session, context: [...session.context, item], updatedAt: new Date().toISOString() });
+      },
+      importChatContext(id) {
+        const source = chatSessions.find((session) => session.id === id);
+        if (!source || source.id === activeChat.id) return;
+        const item: ChatContextItem = {
+          id: `conversation-${source.id}`,
+          kind: "conversation",
+          title: source.title,
+          body: summarizeChat(source),
+        };
+        updateActiveChat((session) => session.context.some((context) => context.id === item.id)
+          ? session
+          : { ...session, context: [...session.context, item], updatedAt: new Date().toISOString() });
+      },
+      updateProfile(patch) {
+        commit((current) => ({ ...current, profile: { ...current.profile, ...patch } }));
+        if (patch.zip !== undefined || patch.payment !== undefined) {
+          updateActiveChat((session) => ({
+            ...session,
+            preferences: {
+              ...session.preferences,
+              ...(patch.zip !== undefined ? { location: locationLabel(patch.zip) } : {}),
+              ...(patch.payment !== undefined ? { paymentLabel: paymentLabel(patch.payment) } : {}),
+            },
+          }));
+        }
+      },
+      updatePreferences: (patch) => updateActiveChat((session) => ({ ...session, preferences: { ...session.preferences, ...patch } })),
       async deferOnboarding() {
         const result = await persistProfile("DEFERRED");
         if (result.ok) commit((current) => ({ ...current, profile: { ...current.profile, deferred: true } }));
@@ -91,11 +187,24 @@ export function CareProvider({ user, initialData, children }: { user: CareUser; 
         } finally { setSaving(false); }
       },
       sendMessage(text) {
-        const trimmed = text.trim(); if (!trimmed) return; const time = clock();
-        commit((current) => {
-          const turn = bookingTurn(trimmed, current.bookingStep ?? inferBookingStep(current.messages), current.preferences, current.profile);
-          return { ...current, bookingStep: turn.step, preferences: turn.preferences, profile: { ...current.profile, zip: turn.zip, payment: turn.payment }, messages: [...current.messages, { id: `user-${Date.now()}`, role: "user", text: trimmed, time }, { id: `assistant-${Date.now()}`, role: "assistant", text: turn.reply, time }] };
-        });
+        const trimmed = text.trim();
+        if (!trimmed) return;
+        const time = clock();
+        const turn = bookingTurn(trimmed, activeChat.bookingStep, activeChat.preferences, snapshot.profile);
+        const stamp = Date.now();
+        updateActiveChat((session) => ({
+          ...session,
+          title: session.title === "New chat" ? chatTitleFromMessage(trimmed) : session.title,
+          bookingStep: turn.step,
+          preferences: turn.preferences,
+          updatedAt: new Date().toISOString(),
+          messages: [
+            ...session.messages,
+            { id: `user-${stamp}`, role: "user", text: trimmed, time },
+            { id: `assistant-${stamp}`, role: "assistant", text: turn.reply, time },
+          ],
+        }));
+        commit((current) => ({ ...current, profile: { ...current.profile, zip: turn.zip, payment: turn.payment } }));
       },
       selectSlot: (slot) => commit((current) => ({ ...current, draft: slot })),
       bookDraft(shareSms) {
@@ -114,7 +223,7 @@ export function CareProvider({ user, initialData, children }: { user: CareUser; 
         return result;
       },
     };
-  }, [initialData, policyId, router, saving, snapshot, user]);
+  }, [activeChat, chatSessions, initialData, policyId, router, saving, snapshot, user]);
 
   return <CareContext.Provider value={value}>
     {initialData.mode === "fallback" ? <div className={styles.dataBanner} role="status"><span>{initialData.message}</span><button onClick={() => router.refresh()} type="button">Retry database</button></div> : <div className={styles.dataConnected} role="status">Oracle connected</div>}
