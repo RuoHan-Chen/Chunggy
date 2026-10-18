@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
+import { prepareReturnedTimeAction } from "@/app/care-actions";
 import { IconBot, IconPaperclip, IconSend } from "@/components/careway/icons";
 import { useCare } from "@/components/careway/provider";
 import { displayPhone, workflowLabel } from "@/lib/careway/call-flow";
@@ -25,6 +26,8 @@ export function AssistantView() {
   const [draft, setDraft] = useState("");
   const [attachment, setAttachment] = useState("");
   const [searchError, setSearchError] = useState("");
+  const [returnedTimeError, setReturnedTimeError] = useState("");
+  const [preparingTime, setPreparingTime] = useState<string | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
   const transcriptRef = useRef<HTMLDivElement>(null);
@@ -82,6 +85,46 @@ export function AssistantView() {
     if (!window.confirm(warning)) return;
     care.deleteChat(id);
     if (renamingId === id) setRenamingId(null);
+  }
+
+  async function openReturnedTime(time: NonNullable<typeof callResult>["availableTimes"][number]) {
+    if (!selectedOffice?.locationId || !care.savedCareRequest) return;
+    setReturnedTimeError("");
+    setPreparingTime(time.label);
+    try {
+      let option = time.optionId && time.startIso
+        ? { optionId: time.optionId, startIso: time.startIso, endIso: time.endIso }
+        : null;
+      if (!option) {
+        const prepared = await prepareReturnedTimeAction({
+          conversationId: care.activeChatId,
+          requestId: care.savedCareRequest.requestId,
+          locationId: selectedOffice.locationId,
+          label: time.label,
+        });
+        if (!prepared.ok) {
+          setReturnedTimeError(prepared.message);
+          return;
+        }
+        option = prepared.option;
+      }
+      const start = new Date(option.startIso);
+      const end = option.endIso ? new Date(option.endIso) : new Date(start.getTime() + 45 * 60_000);
+      care.selectSlot({
+        ...selectedOffice,
+        id: option.optionId,
+        startIso: start.toISOString(),
+        endIso: end.toISOString(),
+        dateLabel: new Intl.DateTimeFormat(locale, { weekday: "short", month: "short", day: "numeric", year: "numeric" }).format(start),
+        longDate: new Intl.DateTimeFormat(locale, { weekday: "long", month: "long", day: "numeric", year: "numeric" }).format(start),
+        timeLabel: new Intl.DateTimeFormat(locale, { hour: "numeric", minute: "2-digit" }).format(start),
+        endLabel: new Intl.DateTimeFormat(locale, { hour: "numeric", minute: "2-digit" }).format(end),
+        period: start.getHours() < 12 ? "morning" : "afternoon",
+      });
+      router.push("/appointments/review");
+    } finally {
+      setPreparingTime(null);
+    }
   }
 
   return (
@@ -242,33 +285,18 @@ export function AssistantView() {
                   callResult.availableTimes.map((time, index) => (
                     <button
                       className={styles.returnedTime}
-                      disabled={!time.optionId || !time.startIso}
+                      disabled={Boolean(preparingTime) || !selectedOffice?.locationId || !care.savedCareRequest}
                       key={`${time.label}-${index}`}
-                      onClick={() => {
-                        if (!time.optionId || !time.startIso || !selectedOffice) return;
-                        const start = new Date(time.startIso);
-                        const end = time.endIso ? new Date(time.endIso) : new Date(start.getTime() + 45 * 60_000);
-                        care.selectSlot({
-                          ...selectedOffice,
-                          id: time.optionId,
-                          startIso: start.toISOString(),
-                          endIso: end.toISOString(),
-                          dateLabel: new Intl.DateTimeFormat(locale, { weekday: "short", month: "short", day: "numeric", year: "numeric" }).format(start),
-                          longDate: new Intl.DateTimeFormat(locale, { weekday: "long", month: "long", day: "numeric", year: "numeric" }).format(start),
-                          timeLabel: new Intl.DateTimeFormat(locale, { hour: "numeric", minute: "2-digit" }).format(start),
-                          endLabel: new Intl.DateTimeFormat(locale, { hour: "numeric", minute: "2-digit" }).format(end),
-                          period: start.getHours() < 12 ? "morning" : "afternoon",
-                        });
-                        router.push("/appointments/review");
-                      }}
+                      onClick={() => void openReturnedTime(time)}
                       type="button"
                     >
-                      {time.label}{!time.optionId ? " · Ask office to clarify" : ""}
+                      {preparingTime === time.label ? t("Preparing booking…") : time.label}
                     </button>
                   ))
                 ) : (
                   <span>{t("No appointment times were returned.")}</span>
                 )}
+                {returnedTimeError ? <span className={styles.formError} role="alert">{returnedTimeError}</span> : null}
                 <button className={styles.chip} onClick={() => submit("Save for follow-up")} type="button">
                   {t("Save for follow-up")}
                 </button>

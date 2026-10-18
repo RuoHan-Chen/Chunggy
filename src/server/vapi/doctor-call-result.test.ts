@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { normalizeDoctorCallResult } from "./doctor-call-result";
+import { normalizeDoctorCallResult, resolveAppointmentTimeLabel } from "./doctor-call-result";
 
 describe("doctor call result", () => {
   it("normalizes appointment details returned by Vapi", () => {
@@ -31,6 +31,13 @@ describe("doctor call result", () => {
   it("rejects malformed results instead of inventing availability", () => {
     expect(normalizeDoctorCallResult({ available_times: ["Tomorrow"] })).toBeNull();
     expect(normalizeDoctorCallResult(null)).toBeNull();
+  });
+
+  it("resolves weekday-only office times into bookable Chicago timestamps", () => {
+    expect(resolveAppointmentTimeLabel("Tuesday, 3 PM", new Date("2026-10-18T17:00:00.000Z")))
+      .toBe("2026-10-20T20:00:00.000Z");
+    expect(resolveAppointmentTimeLabel("No time reported", new Date("2026-10-18T17:00:00.000Z")))
+      .toBeNull();
   });
 
   it("normalizes the appointment_result output attached to the Vapi assistant", () => {

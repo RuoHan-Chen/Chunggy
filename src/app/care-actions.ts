@@ -7,7 +7,7 @@ import { digits, parseDob, type Appointment, type BookingStep, type CallDraft, t
 import { cancelSavedAppointment, findBookingCallTarget, requestSavedAppointment } from "@/server/database/repositories/appointments";
 import { findCareRequest, saveOfficeOutreach, saveVapiAppointmentOptions, syncCareRequest, updateOfficeOutreach } from "@/server/database/repositories/care-requests";
 import { createVapiDoctorCall, getVapiCall, VapiApiError } from "@/server/vapi/client";
-import { normalizeDoctorCallResult } from "@/server/vapi/doctor-call-result";
+import { normalizeDoctorCallResult, resolveAppointmentTimeLabel } from "@/server/vapi/doctor-call-result";
 import { summarizeDoctorCallWithAgent } from "@/server/vapi/doctor-call-summary";
 import {
   addConversationContext,
@@ -435,6 +435,34 @@ async function waitForDoctorCall(callId: string, assistantId: string) {
   }
   if (lastError instanceof Error) throw lastError;
   throw new VapiApiError("The doctor-office call is still in progress. Check Vapi for the final result.", 202);
+}
+
+export async function prepareReturnedTimeAction(input: {
+  conversationId: string;
+  requestId: string;
+  locationId: string;
+  label: string;
+}) {
+  const user = await authenticatedUser();
+  const conversation = await openConversation(user.userId, input.conversationId);
+  if (conversation?.callDraft.locationId !== input.locationId) {
+    return { ok: false as const, message: "That office is no longer selected." };
+  }
+  const returnedTime = conversation?.callDraft.result?.availableTimes.find(
+    (time) => time.label === input.label,
+  );
+  if (!returnedTime) return { ok: false as const, message: "That returned time is no longer available." };
+  const startIso = returnedTime.startIso ?? resolveAppointmentTimeLabel(returnedTime.label);
+  if (!startIso) return { ok: false as const, message: "The office did not provide enough detail to book that time." };
+  const saved = await saveVapiAppointmentOptions({
+    userId: user.userId,
+    requestId: input.requestId,
+    locationId: input.locationId,
+    times: [{ label: returnedTime.label, startIso, endIso: returnedTime.endIso }],
+  });
+  const option = saved[0];
+  if (!option) return { ok: false as const, message: "That returned time could not be saved." };
+  return { ok: true as const, option };
 }
 
 export async function placeOfficeCallAction(input: {

@@ -59,10 +59,7 @@ describe("doctor call summary agent", () => {
       },
     );
 
-    expect(result?.result.availableTimes[0]).toEqual({
-      label: "Friday, 3:00 PM",
-      startIso: null,
-      endIso: null,
-    });
+    expect(result?.result.availableTimes[0]?.label).toBe("Friday, 3:00 PM");
+    expect(result?.result.availableTimes[0]?.startIso).toMatch(/T20:00:00\.000Z$/);
   });
 });
