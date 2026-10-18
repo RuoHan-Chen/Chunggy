@@ -1564,6 +1564,19 @@
   color: #41556f;
 }
 
+.vapiOutput {
+  max-height: 320px;
+  overflow: auto;
+  margin: 8px 0 0;
+  padding: 12px;
+  border-radius: 8px;
+  background: #f4f7fb;
+  color: #24344d;
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .empty {
   display: grid;
   justify-items: start;

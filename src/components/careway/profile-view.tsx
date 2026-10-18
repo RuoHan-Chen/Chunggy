@@ -16,6 +16,25 @@ import styles from "@/components/careway/careway.module.css";
 const tabs = ["Personal details", "Insurance", "Preferences", "Privacy"] as const;
 type Tab = (typeof tabs)[number];
 
+type VapiTestResult = {
+  callId: string;
+  status: string;
+  structuredOutputStatus: "available" | "pending" | "missing" | "invalid";
+  structuredOutput: unknown | null;
+  findingsStatus: "available" | "pending" | "missing" | "invalid";
+  diagnostic: string | null;
+  findings: {
+    coverage_status: "covered" | "not_covered" | "unknown";
+    coverage_percent: number | null;
+    copay: number | null;
+    deductible_remaining: number | null;
+    prior_authorization_required: boolean | null;
+    in_network_required: boolean | null;
+    unresolved_questions: string[];
+    call_summary: string;
+  } | null;
+};
+
 const terms = [
   {
     title: "Deductible",
@@ -39,6 +58,9 @@ export function ProfileView({ initialTab = "Insurance" }: { initialTab?: Tab }) 
   const [openTerm, setOpenTerm] = useState<string | null>("Deductible");
   const [showId, setShowId] = useState(false);
   const [permissionOpen, setPermissionOpen] = useState(false);
+  const [vapiLoading, setVapiLoading] = useState(false);
+  const [vapiError, setVapiError] = useState("");
+  const [vapiResult, setVapiResult] = useState<VapiTestResult | null>(null);
   const profile = care.profile;
 
   async function savePersonal() {
@@ -57,6 +79,24 @@ export function ProfileView({ initialTab = "Insurance" }: { initialTab?: Tab }) 
     setSaved("Saving…");
     const result = await care.saveInsurance();
     setSaved(result.message);
+  }
+
+  async function fetchCoverageResult() {
+    setVapiLoading(true);
+    setVapiError("");
+    setVapiResult(null);
+    try {
+      const response = await fetch("/api/vapi/test", { cache: "no-store" });
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(typeof result.error === "string" ? result.error : "Could not retrieve the Vapi test call.");
+      }
+      setVapiResult(result as VapiTestResult);
+    } catch (error) {
+      setVapiError(error instanceof Error ? error.message : "Could not retrieve the Vapi test call.");
+    } finally {
+      setVapiLoading(false);
+    }
   }
 
   const maskedId = profile.memberId
@@ -319,7 +359,7 @@ export function ProfileView({ initialTab = "Insurance" }: { initialTab?: Tab }) 
                 {profile.coverageStatus === "requested" ? "Check requested" : "Not verified"}
               </span>
               <p className={styles.cardLede}>
-                Adding a card doesn’t confirm coverage. We’ll need to check your plan details with your insurer.
+                Adding a card doesn’t confirm coverage. Retrieve the configured completed Vapi test call to inspect its reported findings.
               </p>
               <button
                 className={styles.btnPrimaryWide}
@@ -328,7 +368,35 @@ export function ProfileView({ initialTab = "Insurance" }: { initialTab?: Tab }) 
               >
                 Request coverage check
               </button>
-              <p className={styles.fine}>Review permission before we contact your insurer.</p>
+              <p className={styles.fine}>This demo fetches the synthetic test call; it does not send your profile details or contact your insurer.</p>
+              {vapiLoading ? <p className={styles.saved} role="status">Retrieving call results…</p> : null}
+              {vapiError ? <p className={styles.formError} role="alert">{vapiError}</p> : null}
+              {vapiResult ? (
+                <ul aria-live="polite" className={styles.plainList}>
+                  <li><strong>Call status:</strong> {vapiResult.status}</li>
+                  <li><strong>Structured output:</strong> {vapiResult.structuredOutputStatus}</li>
+                  {vapiResult.findings ? (
+                    <>
+                      <li><strong>Coverage:</strong> {vapiResult.findings.coverage_status}</li>
+                      <li><strong>Coverage percent:</strong> {vapiResult.findings.coverage_percent ?? "Not available"}</li>
+                      <li><strong>Copay:</strong> {vapiResult.findings.copay === null ? "Not available" : `$${vapiResult.findings.copay}`}</li>
+                      <li><strong>Deductible remaining:</strong> {vapiResult.findings.deductible_remaining === null ? "Not available" : `$${vapiResult.findings.deductible_remaining}`}</li>
+                      <li><strong>Prior authorization:</strong> {vapiResult.findings.prior_authorization_required === null ? "Not available" : vapiResult.findings.prior_authorization_required ? "Required" : "Not required"}</li>
+                      <li><strong>In network required:</strong> {vapiResult.findings.in_network_required === null ? "Not available" : vapiResult.findings.in_network_required ? "Yes" : "No"}</li>
+                      <li><strong>Summary:</strong> {vapiResult.findings.call_summary}</li>
+                      <li><strong>Unresolved questions:</strong> {vapiResult.findings.unresolved_questions.length ? vapiResult.findings.unresolved_questions.join("; ") : "None reported"}</li>
+                      <li>Reported information from the call; verify benefits with the insurer.</li>
+                    </>
+                  ) : null}
+                  {vapiResult.structuredOutput !== null && !vapiResult.findings ? (
+                    <li>
+                      <strong>Retrieved output data:</strong>
+                      <pre className={styles.vapiOutput}>{JSON.stringify(vapiResult.structuredOutput, null, 2)}</pre>
+                    </li>
+                  ) : null}
+                  {vapiResult.diagnostic ? <li>{vapiResult.diagnostic}</li> : null}
+                </ul>
+              ) : null}
             </section>
             <section className={styles.card}>
               <h2>Common cost terms</h2>
@@ -407,8 +475,7 @@ export function ProfileView({ initialTab = "Insurance" }: { initialTab?: Tab }) 
           <div aria-modal="true" className={styles.modalCard} role="dialog">
             <h2>Request a coverage check?</h2>
             <p className={styles.cardLede}>
-              A real check would share your name, date of birth, phone, and member ID with the insurer. This preview
-              only marks the request on your profile.
+              This retrieves the configured synthetic Vapi test call only. It does not share your profile details or contact your insurer.
             </p>
             <div className={styles.actions}>
               <button className={styles.btnOutline} onClick={() => setPermissionOpen(false)} type="button">
@@ -416,13 +483,14 @@ export function ProfileView({ initialTab = "Insurance" }: { initialTab?: Tab }) 
               </button>
               <button
                 className={styles.btnPrimary}
-                onClick={() => {
-                  care.requestCoverage();
+                disabled={vapiLoading}
+                onClick={async () => {
                   setPermissionOpen(false);
+                  await fetchCoverageResult();
                 }}
                 type="button"
               >
-                Request check
+                {vapiLoading ? "Retrieving…" : "Retrieve test results"}
               </button>
             </div>
           </div>
