@@ -326,7 +326,7 @@
 }
 
 .assistantGrid {
-  grid-template-columns: minmax(0, 1.5fr) minmax(300px, 0.78fr);
+  grid-template-columns: minmax(0, 720px);
   min-height: 680px;
 }
 

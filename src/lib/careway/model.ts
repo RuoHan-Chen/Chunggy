@@ -57,6 +57,8 @@ export type ChatMessage = {
   time: string;
 };
 
+export type BookingStep = "idle" | "visit" | "location" | "time" | "payment" | "ready";
+
 export type Notice = {
   id: string;
   title: string;
@@ -69,17 +71,13 @@ export type CareSnapshot = {
   profile: Profile;
   preferences: Preferences;
   messages: ChatMessage[];
+  bookingStep: BookingStep;
   draft: Slot | null;
   appointment: Appointment | null;
   notices: Notice[];
 };
 
-export const visitTypes = [
-  "Dental checkup",
-  "Eye exam",
-  "Annual physical",
-  "Dermatology visit",
-];
+export const visitTypes = ["dental", "eye", "annual", "other"];
 
 export const timeChoices = [
   "Weekday mornings",
@@ -122,7 +120,7 @@ export function defaultProfile(name = "Maya Chen"): Profile {
 
 export function defaultPreferences(): Preferences {
   return {
-    visitType: "Dental checkup",
+    visitType: "dental",
     location: "Near 60614 within 5 miles",
     preferredTimes: "Weekday mornings",
     paymentLabel: paymentLabel("self"),
@@ -140,7 +138,7 @@ export function seedMessages(): ChatMessage[] {
     {
       id: "seed-assistant",
       role: "assistant",
-      text: "I can help. What days work best for you?",
+      text: "I can book a dental visit. Which ZIP should I search near?",
       time: "10:24 AM",
     },
   ];
@@ -152,6 +150,7 @@ export function defaultSnapshot(name = ""): CareSnapshot {
     profile: defaultProfile(name),
     preferences: defaultPreferences(),
     messages: seedMessages(),
+    bookingStep: "location",
     draft: null,
     appointment: null,
     notices: [
@@ -309,7 +308,7 @@ export function insuranceErrors(profile: Profile) {
 const dental: Slot[] = [
   {
     id: "lakeview-1030",
-    visitType: "Dental checkup",
+    visitType: "dental",
     provider: "Lakeview Dental",
     dateLabel: "Tue, Oct 20, 2026",
     longDate: "Tuesday, October 20, 2026",
@@ -328,7 +327,7 @@ const dental: Slot[] = [
   },
   {
     id: "north-0900",
-    visitType: "Dental checkup",
+    visitType: "dental",
     provider: "North Branch Dental",
     dateLabel: "Wed, Oct 21, 2026",
     longDate: "Wednesday, October 21, 2026",
@@ -347,7 +346,7 @@ const dental: Slot[] = [
   },
   {
     id: "riverside-1415",
-    visitType: "Dental checkup",
+    visitType: "dental",
     provider: "Riverside Smile Studio",
     dateLabel: "Thu, Oct 22, 2026",
     longDate: "Thursday, October 22, 2026",
@@ -369,7 +368,7 @@ const dental: Slot[] = [
 const vision: Slot[] = [
   {
     id: "lakeview-vision",
-    visitType: "Eye exam",
+    visitType: "eye",
     provider: "Lakeview Vision",
     dateLabel: "Tue, Oct 20, 2026",
     longDate: "Tuesday, October 20, 2026",
@@ -388,7 +387,7 @@ const vision: Slot[] = [
   },
   {
     id: "clark-optical",
-    visitType: "Eye exam",
+    visitType: "eye",
     provider: "Clark Street Optical",
     dateLabel: "Fri, Oct 23, 2026",
     longDate: "Friday, October 23, 2026",
@@ -410,7 +409,7 @@ const vision: Slot[] = [
 const physical: Slot[] = [
   {
     id: "lincoln-clinic",
-    visitType: "Annual physical",
+    visitType: "annual",
     provider: "Lincoln Park Clinic",
     dateLabel: "Mon, Oct 19, 2026",
     longDate: "Monday, October 19, 2026",
@@ -429,7 +428,7 @@ const physical: Slot[] = [
   },
   {
     id: "wells-primary",
-    visitType: "Annual physical",
+    visitType: "annual",
     provider: "Wells Primary Care",
     dateLabel: "Wed, Oct 21, 2026",
     longDate: "Wednesday, October 21, 2026",
@@ -451,7 +450,7 @@ const physical: Slot[] = [
 const derm: Slot[] = [
   {
     id: "southport-derm",
-    visitType: "Dermatology visit",
+    visitType: "other",
     provider: "Southport Dermatology",
     dateLabel: "Thu, Oct 22, 2026",
     longDate: "Thursday, October 22, 2026",
@@ -472,8 +471,19 @@ const derm: Slot[] = [
 
 const catalog = [...dental, ...vision, ...physical, ...derm];
 
+export function canonicalVisitType(value: string) {
+  const aliases: Record<string, string> = {
+    "Dental checkup": "dental",
+    "Eye exam": "eye",
+    "Annual physical": "annual",
+    "Dermatology visit": "other",
+  };
+  const next = aliases[value] ?? value;
+  return visitTypes.includes(next) ? next : "dental";
+}
+
 export function slotsFor(visitType: string, preferredTimes: string) {
-  const matches = catalog.filter((slot) => slot.visitType === visitType);
+  const matches = catalog.filter((slot) => slot.visitType === canonicalVisitType(visitType));
   const list = matches.length > 0 ? matches : dental;
   const morningFirst = (a: Slot, b: Slot) =>
     a.period === b.period ? 0 : a.period === "morning" ? -1 : 1;
@@ -486,30 +496,171 @@ export function slotsFor(visitType: string, preferredTimes: string) {
   return list;
 }
 
-export function assistantReply(text: string, preferences: Preferences) {
+const bookingSteps: BookingStep[] = ["idle", "visit", "location", "time", "payment", "ready"];
+
+export function isBookingStep(value: string): value is BookingStep {
+  return bookingSteps.includes(value as BookingStep);
+}
+
+export function inferBookingStep(messages: ChatMessage[]): BookingStep {
+  const last = [...messages].reverse().find((message) => message.role === "assistant")?.text.toLowerCase() ?? "";
+  if (last.includes("which zip") || last.includes("search near") || last.includes("5-digit zip")) return "location";
+  if (last.includes("time of day") || last.includes("days work best")) return "time";
+  if (last.includes("how do you want to pay") || last.includes("want to pay")) return "payment";
+  if (last.includes("show options")) return "ready";
+  if (last.includes("kind of visit")) return "visit";
+  return "idle";
+}
+
+export function isLegacyBookingSeed(messages: ChatMessage[]) {
+  return messages.length === 2 && messages[1]?.text === "I can help. What days work best for you?";
+}
+
+export function bookingChoices(step: BookingStep, zip: string) {
+  if (step === "visit") return visitTypes;
+  if (step === "location") return zip ? [`Use ${zip}`] : [];
+  if (step === "time") return timeChoices;
+  if (step === "payment") return ["Insurance", "Self-pay", "Decide later"];
+  return [];
+}
+
+export type BookingTurn = {
+  reply: string;
+  step: BookingStep;
+  preferences: Preferences;
+  zip: string;
+  payment: PaymentChoice;
+};
+
+export function bookingTurn(
+  text: string,
+  step: BookingStep,
+  preferences: Preferences,
+  profile: Profile,
+): BookingTurn {
+  const detectedVisit = detectVisit(text);
+  const detectedTime = detectTime(text);
+  const detectedZip = detectZip(text);
+  const detectedPayment = detectPayment(text);
+  const fresh = step === "idle" && (wantsBooking(text) || Boolean(detectedVisit));
+
+  if (step === "idle" && !fresh) {
+    return {
+      reply: generalReply(text),
+      step,
+      preferences,
+      zip: profile.zip,
+      payment: profile.payment,
+    };
+  }
+
+  const restart = Boolean(detectedVisit && detectedVisit !== preferences.visitType && !fresh);
+  const passed = {
+    visit: !fresh && !restart && step !== "idle" && step !== "visit",
+    location: !fresh && !restart && (step === "time" || step === "payment" || step === "ready"),
+    time: !fresh && !restart && (step === "payment" || step === "ready"),
+    payment: !fresh && !restart && step === "ready",
+  };
+  const visitType = detectedVisit ?? (passed.visit ? preferences.visitType : "");
+  const zip = detectedZip ?? (passed.location ? profile.zip : "");
+  const preferredTimes = detectedTime ?? (passed.time ? preferences.preferredTimes : "");
+  const nextPreferences: Preferences = {
+    ...preferences,
+    visitType: visitType || preferences.visitType,
+    location: zip ? locationLabel(zip) : preferences.location,
+    preferredTimes: preferredTimes || preferences.preferredTimes,
+    paymentLabel: paymentLabel(detectedPayment ?? profile.payment),
+  };
+  const known = {
+    visit: Boolean(visitType),
+    location: Boolean(zip),
+    time: Boolean(preferredTimes),
+    payment: Boolean(detectedPayment) || passed.payment,
+  };
+  const next = nextBookingStep(known);
+  const advanced = next !== step || fresh;
+  const payment = detectedPayment ?? profile.payment;
+  return {
+    reply: advanced ? bookingReply(next, nextPreferences, zip, payment) : bookingNudge(step),
+    step: next,
+    preferences: {
+      ...nextPreferences,
+      paymentLabel: detectedPayment || passed.payment ? paymentLabel(payment) : preferences.paymentLabel,
+    },
+    zip: zip || profile.zip,
+    payment,
+  };
+}
+
+function nextBookingStep(known: { visit: boolean; location: boolean; time: boolean; payment: boolean }): BookingStep {
+  if (!known.visit) return "visit";
+  if (!known.location) return "location";
+  if (!known.time) return "time";
+  if (!known.payment) return "payment";
+  return "ready";
+}
+
+function bookingReply(step: BookingStep, preferences: Preferences, zip: string, payment: PaymentChoice) {
+  const visit = preferences.visitType;
+  const article = /^[aeiou]/i.test(visit) ? "an" : "a";
+  if (step === "visit") return "What kind of visit do you want?";
+  if (step === "location") return `I can book ${article} ${visit} visit. Which ZIP should I search near?`;
+  if (step === "time") return `I’ll look near ${zip || "your ZIP"}. What time of day works best?`;
+  if (step === "payment") return `${preferences.preferredTimes}. How do you want to pay?`;
+  return `I can look for ${visit} visits ${preferences.location.toLowerCase()}, ${preferences.preferredTimes.toLowerCase()}, ${paymentTitle(payment).toLowerCase()}. I can show options when you’re ready.`;
+}
+
+function bookingNudge(step: BookingStep) {
+  if (step === "visit") return "Choose dental, eye, annual, or other.";
+  if (step === "location") return "Send a 5-digit ZIP, or use the one on your profile.";
+  if (step === "time") return "Choose weekday mornings, weekday afternoons, or flexible.";
+  if (step === "payment") return "Choose insurance, self-pay, or decide later.";
+  return "I can show options when you’re ready.";
+}
+
+function wantsBooking(text: string) {
+  return /\b(book|booking|appointment|schedule|checkup|check-up)\b/i.test(text);
+}
+
+function detectVisit(text: string) {
   const lower = text.toLowerCase();
-  if (lower.includes("dental")) {
-    return "I can look for a dental checkup. Weekday mornings are selected. Find options when you’re ready, or tell me a different time.";
-  }
-  if (lower.includes("eye")) {
-    return "I can look for an eye exam. Update the visit type in booking preferences, then find options.";
-  }
-  if (lower.includes("physical") || lower.includes("primary")) {
-    return "I can look for an annual physical. Set that visit type in booking preferences, then find options.";
-  }
-  if (lower.includes("morning")) {
-    return `I’ll prefer weekday mornings, ${preferences.location.toLowerCase()}.`;
-  }
-  if (lower.includes("afternoon")) {
-    return `I’ll prefer weekday afternoons, ${preferences.location.toLowerCase()}.`;
-  }
+  if (visitTypes.includes(lower.trim())) return lower.trim();
+  if (/\b(eye|vision|optical)\b/.test(lower)) return "eye";
+  if (/\b(dental|dentist|tooth|teeth)\b/.test(lower)) return "dental";
+  if (/\b(annual|physical|primary)\b/.test(lower)) return "annual";
+  if (/\b(dermat|skin)\b/.test(lower)) return "other";
+  return null;
+}
+
+function detectTime(text: string) {
+  const lower = text.toLowerCase();
+  if (lower.includes("afternoon")) return "Weekday afternoons";
+  if (lower.includes("morning")) return "Weekday mornings";
+  if (lower.includes("flexible")) return "Flexible";
+  return null;
+}
+
+function detectZip(text: string) {
+  return text.match(/\b(\d{5})\b/)?.[1] ?? null;
+}
+
+function detectPayment(text: string): PaymentChoice | null {
+  const lower = text.toLowerCase();
+  if (lower.includes("insurance")) return "insurance";
+  if (lower.includes("self-pay") || lower.includes("self pay") || lower.includes("pay myself")) return "self";
+  if (lower.includes("decide later") || lower.includes("decide at")) return "later";
+  return null;
+}
+
+function generalReply(text: string) {
+  const lower = text.toLowerCase();
   if (lower.includes("cost") || lower.includes("price")) {
     return "Estimates are typical self-pay ranges. The office confirms the final cost before you’re charged.";
   }
   if (lower.includes("insurance")) {
     return "You can use insurance, pay yourself, or decide when you book. Coverage still needs a check before anyone treats it as verified.";
   }
-  return "Tell me the visit you want, a time of day, or a ZIP code. I can also take you to options with the preferences on the right.";
+  return "Tell me the visit you want, such as dental, eye, annual, or other. I’ll ask where, when, and how you want to pay.";
 }
 
 export function toIcs(appointment: Appointment, name: string) {

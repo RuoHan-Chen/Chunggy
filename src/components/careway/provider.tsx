@@ -9,11 +9,16 @@ import {
 } from "react";
 
 import {
-  assistantReply,
+  bookingTurn,
+  canonicalVisitType,
   clock,
   defaultSnapshot,
+  inferBookingStep,
+  isBookingStep,
+  isLegacyBookingSeed,
   locationLabel,
   paymentLabel,
+  seedMessages,
   type Appointment,
   type CareSnapshot,
   type ChatMessage,
@@ -35,6 +40,7 @@ type CareContextValue = {
   profile: Profile;
   preferences: Preferences;
   messages: ChatMessage[];
+  bookingStep: CareSnapshot["bookingStep"];
   draft: Slot | null;
   appointment: Appointment | null;
   notices: Notice[];
@@ -43,7 +49,6 @@ type CareContextValue = {
   deferOnboarding: () => void;
   completeOnboarding: () => void;
   sendMessage: (text: string) => void;
-  chooseTime: (time: string) => void;
   selectSlot: (slot: Slot) => void;
   bookDraft: (shareSms: boolean) => void;
   cancelAppointment: () => void;
@@ -69,6 +74,15 @@ function loadSnapshot(email: string, name: string): CareSnapshot {
     }
     const parsed = JSON.parse(raw) as CareSnapshot;
     if (parsed.version !== 2 || !parsed.profile) return base;
+    const legacySeed = isLegacyBookingSeed(parsed.messages ?? []);
+    const messages = legacySeed
+      ? seedMessages()
+      : parsed.messages?.length
+        ? parsed.messages
+        : base.messages;
+    const storedStep = typeof parsed.bookingStep === "string" && isBookingStep(parsed.bookingStep)
+      ? parsed.bookingStep
+      : inferBookingStep(messages);
     return {
       ...base,
       ...parsed,
@@ -77,9 +91,14 @@ function loadSnapshot(email: string, name: string): CareSnapshot {
         ...parsed.profile,
         fullName: parsed.profile.fullName || name,
       },
-      preferences: { ...base.preferences, ...parsed.preferences },
+      preferences: {
+        ...base.preferences,
+        ...parsed.preferences,
+        visitType: canonicalVisitType(parsed.preferences?.visitType || base.preferences.visitType),
+      },
       notices: parsed.notices?.length ? parsed.notices : base.notices,
-      messages: parsed.messages?.length ? parsed.messages : base.messages,
+      messages,
+      bookingStep: legacySeed ? "location" : storedStep,
     };
   } catch {
     return base;
@@ -160,6 +179,7 @@ export function CareProvider({
       profile: snapshot.profile,
       preferences: snapshot.preferences,
       messages: snapshot.messages,
+      bookingStep: snapshot.bookingStep ?? inferBookingStep(snapshot.messages),
       draft: snapshot.draft,
       appointment: snapshot.appointment,
       notices: snapshot.notices,
@@ -208,41 +228,29 @@ export function CareProvider({
         const trimmed = text.trim();
         if (!trimmed) return;
         const time = clock();
-        commit((current) => ({
-          ...current,
-          messages: [
-            ...current.messages,
-            { id: `user-${Date.now()}`, role: "user", text: trimmed, time },
-            {
-              id: `assistant-${Date.now()}`,
-              role: "assistant",
-              text: assistantReply(trimmed, current.preferences),
-              time,
+        commit((current) => {
+          const turn = bookingTurn(
+            trimmed,
+            current.bookingStep ?? inferBookingStep(current.messages),
+            current.preferences,
+            current.profile,
+          );
+          return {
+            ...current,
+            bookingStep: turn.step,
+            preferences: turn.preferences,
+            profile: {
+              ...current.profile,
+              zip: turn.zip,
+              payment: turn.payment,
             },
-          ],
-        }));
-      },
-      chooseTime(timeChoice) {
-        const time = clock();
-        commit((current) => ({
-          ...current,
-          preferences: { ...current.preferences, preferredTimes: timeChoice },
-          messages: [
-            ...current.messages,
-            {
-              id: `user-${Date.now()}`,
-              role: "user",
-              text: timeChoice,
-              time,
-            },
-            {
-              id: `assistant-${Date.now()}`,
-              role: "assistant",
-              text: `I’ll look for ${current.preferences.visitType.toLowerCase()} visits on ${timeChoice.toLowerCase()}, ${current.preferences.location.toLowerCase()}.`,
-              time,
-            },
-          ],
-        }));
+            messages: [
+              ...current.messages,
+              { id: `user-${Date.now()}`, role: "user", text: trimmed, time },
+              { id: `assistant-${Date.now()}`, role: "assistant", text: turn.reply, time },
+            ],
+          };
+        });
       },
       selectSlot(slot) {
         commit((current) => ({ ...current, draft: slot }));
