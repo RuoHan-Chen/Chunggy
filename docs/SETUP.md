@@ -40,14 +40,19 @@ OpenAI credentials are optional for the current login and database dashboard.
 ```bash
 git clone https://github.com/RuoHan-Chen/Chunggy.git
 cd Chunggy
-nvm use
-npm ci
 ```
 
 If this pull request has not been merged yet, check out its branch:
 
 ```bash
-git switch basic-server-setup
+git switch userflow-frontend-fixes
+```
+
+Then install dependencies with the repository's Node version:
+
+```bash
+nvm use
+npm ci
 ```
 
 ## 2. Extract the Oracle wallet
@@ -153,6 +158,15 @@ Set `OCI_GENAI_AUTH_MODE=instance_principal` on the VM. Add the VM to an OCI dyn
 
 ## 5. Start and verify
 
+Apply the versioned schema and verify its Phase 0 tables and seed data:
+
+```bash
+npm run db:migrate
+npm run db:verify
+```
+
+The migration command is idempotent, so teammates and deployments can run it after every pull. It stores completed versions in `SCHEMA_MIGRATIONS`. Phase 0 stores manually entered insurance fields only; it does not store uploaded card images.
+
 Start the development server:
 
 ```bash
@@ -173,6 +187,15 @@ The database check should return:
 ```
 
 Open [http://localhost:3000/login](http://localhost:3000/login), continue with Google, and confirm that `/dashboard` displays the Oracle database name, schema, service, database time, and available tables.
+
+Run the automated checks before opening a pull request:
+
+```bash
+npm test
+npm run test:e2e
+npm run lint
+npm run build -- --webpack
+```
 
 After signing in, call the Oracle AI route from the browser console:
 

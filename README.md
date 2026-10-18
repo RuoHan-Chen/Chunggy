@@ -1,6 +1,6 @@
 # Chunggy
 
-Chunggy is a Next.js application foundation for Oracle Database, Google authentication, and the OpenAI API. This branch contains server setup only; product and healthcare workflow logic are intentionally out of scope.
+Chunggy is a Next.js application foundation for Oracle Database, Google authentication, and the OpenAI API. It now includes the first Oracle-backed patient workflow; appointment booking and healthcare automation remain preview-only.
 
 ## Current implementation
 
@@ -15,9 +15,17 @@ Chunggy is a Next.js application foundation for Oracle Database, Google authenti
 - [x] Authenticated OCI Generative AI chatbot route
 - [x] Integration readiness health endpoint
 - [x] Oracle credentials and live connection verification
+- [x] Versioned, idempotent Oracle migration runner
+- [x] Phase 0 user, profile, insurance, appointment-type, and provider schema
+- [x] Seeded provider catalog and database verification command
+- [x] Server-only repositories with runtime input validation
+- [x] Oracle-backed signed-in users, patient profiles, and manually entered insurance
+- [x] Oracle provider listings with an explicit development fallback when disconnected
+- [x] Profile save/remove status and retry UI (no browser persistence for database-backed fields)
+- [x] Vitest unit tests and Playwright API smoke-test setup
 - [ ] Google OAuth sign-in verification
 - [ ] OpenAI API key and live request verification
-- [ ] Oracle-backed user and conversation persistence
+- [ ] Oracle-backed conversation persistence
 - [ ] Authenticated chat endpoint and interface
 
 ## Run locally
@@ -28,6 +36,8 @@ Use Node.js 22.13 or newer.
 nvm use
 npm install
 cp .env.example .env.local
+npm run db:migrate
+npm run db:verify
 npm run dev
 ```
 
@@ -81,13 +91,30 @@ The OpenAI client is initialized only when it is first used, so missing API keys
 
 The OCI route uses Oracle's official SDK with an OCI config-file profile locally and instance-principal authentication on an OCI VM. It does not use a Generative AI Project API key.
 
+## Database development
+
+Run migrations after pulling a change that adds or updates the application schema:
+
+```bash
+npm run db:migrate
+npm run db:verify
+```
+
+`db:migrate` records applied versions in `SCHEMA_MIGRATIONS` and is safe to run repeatedly. Phase 0 creates `APP_USERS`, `PATIENT_PROFILES`, `INSURANCE_POLICIES`, `APPOINTMENT_TYPES`, `PROVIDER_LOCATIONS`, and `PROVIDER_SERVICES`. Insurance-card files are intentionally not stored; manually entered policy fields are the only database input.
+
+Run automated checks with:
+
+```bash
+npm test
+npm run test:e2e
+```
+
 ## Next implementation steps
 
 1. Complete a Google sign-in and verify the authenticated dashboard.
 2. Create a least-privilege Oracle application user for deployment.
-3. Add `USERS`, `CONVERSATIONS`, and `MESSAGES` migrations.
-4. Add a chat interface for the authenticated OCI Generative AI route.
-5. Save and retrieve per-user conversation history.
+3. Add `CONVERSATIONS` and `MESSAGES` migrations after the frontend-only chat-session phase.
+4. Save and retrieve per-user conversation history.
 
 ## References
 
