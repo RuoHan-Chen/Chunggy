@@ -18,6 +18,7 @@ import styles from "@/components/careway/careway.module.css";
 export function ConfirmedView() {
   const care = useCare();
   const [cancelOpen, setCancelOpen] = useState(false);
+  const [cancelError, setCancelError] = useState("");
   const appointment = care.appointment;
   const name = firstName(care.profile.fullName || care.user.name);
 
@@ -36,6 +37,8 @@ export function ConfirmedView() {
   }
 
   const cancelled = appointment.status === "cancelled";
+  const officeConfirmed = appointment.status === "confirmed" && appointment.simulated === false;
+  const statusLabel = cancelled ? "Cancelled" : officeConfirmed ? "Confirmed by office" : "Simulated request";
 
   function downloadCalendar() {
     const file = new Blob([toIcs(appointment!, care.profile.fullName || name)], {
@@ -56,11 +59,13 @@ export function ConfirmedView() {
           <IconCheck size={28} />
         </span>
         <div>
-          <h1>{cancelled ? `Visit cancelled, ${name}.` : `You’re booked, ${name}.`}</h1>
+          <h1>{cancelled ? `Visit cancelled, ${name}.` : officeConfirmed ? `You’re booked, ${name}.` : `Request saved, ${name}.`}</h1>
           <p>
             {cancelled
-              ? "This time is off your schedule. You can pick another opening whenever you’re ready."
-              : "Your appointment has been confirmed by the office. We’ve sent a confirmation details to your email and you can also view it in your appointments."}
+              ? "This request is cancelled. The office was not contacted."
+              : officeConfirmed
+                ? "The office confirmed this visit."
+                : `This is a simulated request${appointment.appointmentId ? " stored in Oracle" : " for this session only"}. No office was contacted, and insurance eligibility was not checked.`}
           </p>
         </div>
       </header>
@@ -68,7 +73,7 @@ export function ConfirmedView() {
       <div className={styles.confirmGrid}>
         <section className={styles.card}>
           <span className={cancelled ? styles.badgeMuted : styles.badge}>
-            <IconCheck size={14} /> {cancelled ? "Cancelled" : "Confirmed by office"}
+            <IconCheck size={14} /> {statusLabel}
           </span>
           <h2>{appointment.visitType}</h2>
           <p className={styles.provider}>{appointment.provider}</p>
@@ -174,21 +179,28 @@ export function ConfirmedView() {
           <div aria-modal="true" className={styles.modalCard} role="dialog">
             <h2>Cancel this appointment?</h2>
             <p className={styles.cardLede}>
-              {appointment.provider} will come off your upcoming list. This preview doesn’t contact the office.
+              {appointment.provider} will come off your upcoming list. The office is not contacted.
             </p>
+            {cancelError ? <p className={styles.formError}>{cancelError}</p> : null}
             <div className={styles.actions}>
               <button className={styles.btnOutline} onClick={() => setCancelOpen(false)} type="button">
                 Keep appointment
               </button>
               <button
                 className={styles.btnDanger}
-                onClick={() => {
-                  care.cancelAppointment();
+                disabled={care.saving}
+                onClick={async () => {
+                  setCancelError("");
+                  const result = await care.cancelAppointment();
+                  if (!result.ok) {
+                    setCancelError(result.message);
+                    return;
+                  }
                   setCancelOpen(false);
                 }}
                 type="button"
               >
-                Cancel appointment
+                {care.saving ? "Cancelling…" : "Cancel appointment"}
               </button>
             </div>
           </div>

@@ -12,7 +12,7 @@ import {
   type ReactNode,
 } from "react";
 
-import { removeInsuranceAction, saveInsuranceAction, saveProfileAction, syncCareRequestAction } from "@/app/care-actions";
+import { cancelAppointmentAction, removeInsuranceAction, requestAppointmentAction, saveInsuranceAction, saveProfileAction, syncCareRequestAction } from "@/app/care-actions";
 import styles from "@/components/careway/careway.module.css";
 import {
   bookingTurn,
@@ -24,6 +24,7 @@ import {
   paymentLabel,
   type Appointment,
   type CareBootstrap,
+  isOpenAppointment,
   type CareSaveResult,
   type CareSnapshot,
   type ChatContextItem,
@@ -44,7 +45,7 @@ type CareContextValue = {
   ready: boolean; user: CareUser; dataMode: CareBootstrap["mode"]; dataMessage: string | null;
   saving: boolean; profile: Profile; preferences: Preferences; messages: ChatMessage[];
   bookingStep: CareSnapshot["bookingStep"]; draft: Slot | null; appointment: Appointment | null;
-  notices: Notice[]; providerSlots: Slot[]; savedCareRequest: SavedCareRequest | null; retryDatabase: () => void;
+  notices: Notice[]; providerSlots: Slot[]; savedCareRequest: SavedCareRequest | null; appointments: Appointment[]; retryDatabase: () => void;
   chatSessions: ChatSession[]; activeChatId: string; activeChat: ChatSession;
   createChat: () => void; switchChat: (id: string) => void;
   renameChat: (id: string, title: string) => void; deleteChat: (id: string) => void;
@@ -55,7 +56,8 @@ type CareContextValue = {
   deferOnboarding: () => Promise<CareSaveResult>; completeOnboarding: () => Promise<CareSaveResult>;
   saveProfile: () => Promise<CareSaveResult>; saveInsurance: () => Promise<CareSaveResult>;
   sendMessage: (text: string) => Promise<void>; selectSlot: (slot: Slot) => void;
-  bookDraft: (shareSms: boolean) => void; cancelAppointment: () => void;
+  requestAppointment: (shareSms: boolean) => Promise<CareSaveResult>; cancelAppointment: () => Promise<CareSaveResult>;
+  focusAppointment: (key: string) => void;
   markNoticesRead: () => void; requestCoverage: () => void;
   clearInsurance: () => Promise<CareSaveResult>;
 };
@@ -79,7 +81,7 @@ function appointmentContext(appointment: Appointment): ChatContextItem {
     id: `appointment-${appointment.reference}`,
     kind: "appointment",
     title: `${appointment.visitType} appointment`,
-    body: `${appointment.provider} · ${appointment.longDate} at ${appointment.timeLabel} · ${appointment.status}`,
+    body: `${appointment.provider} · ${appointment.longDate} at ${appointment.timeLabel} · ${appointment.status}${appointment.simulated ? " · simulated, office not contacted" : ""}`,
   };
 }
 
@@ -111,6 +113,7 @@ export function CareProvider({ user, initialData, children }: { user: CareUser; 
   const [sessionSnapshot, setSessionSnapshot] = useState(initialData.snapshot);
   const [policyId, setPolicyId] = useState(initialData.insurancePolicyId);
   const [savedCareRequest, setSavedCareRequest] = useState(initialData.savedCareRequest);
+  const [appointments, setAppointments] = useState(initialData.appointments);
   const [saving, setSaving] = useState(false);
   const [chatSessions, setChatSessions] = useState<ChatSession[]>(() => [chatFromSnapshot(initialData.snapshot)]);
   const [activeChatId, setActiveChatId] = useState("chat-initial");
@@ -159,8 +162,8 @@ export function CareProvider({ user, initialData, children }: { user: CareUser; 
       ready: true, user, dataMode: initialData.mode, dataMessage: initialData.message, saving,
       profile: snapshot.profile, preferences: activeChat.preferences, messages: activeChat.messages,
       bookingStep: activeChat.bookingStep, draft: snapshot.draft,
-      appointment: snapshot.appointment, notices: snapshot.notices, providerSlots: initialData.providerSlots,
-      savedCareRequest,
+      appointment: snapshot.appointment,       notices: snapshot.notices, providerSlots: initialData.providerSlots,
+      savedCareRequest, appointments,
       chatSessions, activeChatId: activeChat.id, activeChat,
       retryDatabase: () => router.refresh(),
       createChat() {
@@ -190,8 +193,9 @@ export function CareProvider({ user, initialData, children }: { user: CareUser; 
         if (activeChat.id === id) setActiveChatId(remaining[0].id);
       },
       importAppointmentContext() {
-        if (!snapshot.appointment) return;
-        const item = appointmentContext(snapshot.appointment);
+        const appointment = appointments.find((item) => isOpenAppointment(item.status)) ?? snapshot.appointment;
+        if (!appointment) return;
+        const item = appointmentContext(appointment);
         updateActiveChat((session) => session.context.some((context) => context.id === item.id)
           ? session
           : { ...session, context: [...session.context, item], updatedAt: new Date().toISOString() });
@@ -384,14 +388,62 @@ export function CareProvider({ user, initialData, children }: { user: CareUser; 
         }
       },
       selectSlot: (slot) => commit((current) => ({ ...current, draft: slot })),
-      bookDraft(shareSms) {
-        commit((current) => {
-          if (!current.draft) return current;
-          const appointment = { ...current.draft, status: "confirmed" as const };
-          return { ...current, appointment, notices: [{ id: `booked-${appointment.reference}`, title: `${appointment.provider} confirmed your visit`, body: `${appointment.longDate} at ${appointment.timeLabel}. Reference ${appointment.reference}.${shareSms ? " Text reminders are on." : ""}`, read: false }, ...current.notices] };
-        });
+      focusAppointment(key) {
+        const appointment = appointments.find((item) => item.appointmentId === key || item.reference === key);
+        if (!appointment) return;
+        commit((current) => ({ ...current, appointment }));
       },
-      cancelAppointment: () => commit((current) => current.appointment ? { ...current, appointment: { ...current.appointment, status: "cancelled" }, notices: [{ id: `cancel-${Date.now()}`, title: "Appointment cancelled", body: `${current.appointment.provider} is no longer on your schedule.`, read: false }, ...current.notices] } : current),
+      async requestAppointment(shareSms) {
+        if (!snapshot.draft) return { ok: false, persisted: false, message: "Choose a time first." };
+        const remember = (appointment: Appointment) => {
+          commit((current) => ({
+            ...current,
+            appointment,
+            notices: [{ id: `booked-${appointment.reference}`, title: "Simulated request saved", body: `${appointment.provider} · ${appointment.longDate} at ${appointment.timeLabel}. Reference ${appointment.reference}. The office was not contacted.`, read: false }, ...current.notices],
+          }));
+          setAppointments((current) => [appointment, ...current.filter((item) => item.appointmentId !== appointment.appointmentId || appointment.appointmentId === null)]);
+          setSavedCareRequest((current) => current ? { ...current, options: current.options.filter((option) => option.id !== snapshot.draft?.id) } : current);
+        };
+        if (initialData.mode === "fallback") {
+          const appointment: Appointment = { ...snapshot.draft, appointmentId: null, status: "simulated", simulated: true };
+          remember(appointment);
+          return sessionOnly("Simulated request kept in this session. The office was not contacted.");
+        }
+        setSaving(true);
+        try {
+          const result = await requestAppointmentAction({ optionId: snapshot.draft.id, shareSms });
+          if (result.appointment) remember(result.appointment);
+          return result;
+        } finally {
+          setSaving(false);
+        }
+      },
+      async cancelAppointment() {
+        const currentAppointment = snapshot.appointment && isOpenAppointment(snapshot.appointment.status)
+          ? snapshot.appointment
+          : appointments.find((item) => isOpenAppointment(item.status)) ?? null;
+        if (!currentAppointment) return { ok: false, persisted: false, message: "No appointment to cancel." };
+        const remember = (appointment: Appointment) => {
+          commit((current) => ({
+            ...current,
+            appointment,
+            notices: [{ id: `cancel-${Date.now()}`, title: "Appointment request cancelled", body: `${appointment.provider} is no longer on your schedule. The office was not contacted.`, read: false }, ...current.notices],
+          }));
+          setAppointments((current) => current.map((item) => item.appointmentId === appointment.appointmentId && item.reference === appointment.reference ? appointment : item));
+        };
+        if (!currentAppointment.appointmentId || initialData.mode === "fallback") {
+          remember({ ...currentAppointment, status: "cancelled" });
+          return sessionOnly("Cancellation kept in this session. The office was not contacted.");
+        }
+        setSaving(true);
+        try {
+          const result = await cancelAppointmentAction(currentAppointment.appointmentId);
+          if (result.appointment) remember(result.appointment);
+          return result;
+        } finally {
+          setSaving(false);
+        }
+      },
       markNoticesRead: () => commit((current) => ({ ...current, notices: current.notices.map((notice) => ({ ...notice, read: true })) })),
       requestCoverage: () => commit((current) => ({ ...current, profile: { ...current.profile, coverageStatus: "requested" } })),
       async clearInsurance() {
@@ -400,7 +452,7 @@ export function CareProvider({ user, initialData, children }: { user: CareUser; 
         return result;
       },
     };
-  }, [activeChat, chatSessions, initialData, policyId, router, savedCareRequest, saving, snapshot, user]);
+  }, [activeChat, appointments, chatSessions, initialData, policyId, router, savedCareRequest, saving, snapshot, user]);
 
   return <CareContext.Provider value={value}>
     {initialData.mode === "fallback" ? <div className={styles.dataBanner} role="status"><span>{initialData.message}</span><button onClick={() => router.refresh()} type="button">Retry database</button></div> : null}

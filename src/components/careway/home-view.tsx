@@ -9,7 +9,7 @@ import {
   IconUser,
 } from "@/components/careway/icons";
 import { useCare } from "@/components/careway/provider";
-import { digits, firstName } from "@/lib/careway/model";
+import { digits, firstName, isOpenAppointment } from "@/lib/careway/model";
 import styles from "@/components/careway/careway.module.css";
 
 export function HomeView() {
@@ -17,7 +17,8 @@ export function HomeView() {
   const name = firstName(care.profile.fullName || care.user.name);
   const hour = new Date().getHours();
   const hello = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
-  const visit = care.appointment?.status === "confirmed" ? care.appointment : null;
+  const visit = care.appointments.find((item) => isOpenAppointment(item.status))
+    ?? (care.appointment && isOpenAppointment(care.appointment.status) ? care.appointment : null);
   const needsPhone = digits(care.profile.phone).length !== 10;
 
   return (
@@ -67,7 +68,7 @@ export function HomeView() {
                 </li>
               </ul>
               <Link className={styles.btnPrimary} href="/appointments/confirmed">
-                View confirmation
+                View request
               </Link>
             </>
           ) : (

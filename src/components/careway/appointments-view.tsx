@@ -4,12 +4,14 @@ import Link from "next/link";
 
 import { IconCalendar, IconPin } from "@/components/careway/icons";
 import { useCare } from "@/components/careway/provider";
+import { isOpenAppointment } from "@/lib/careway/model";
 import styles from "@/components/careway/careway.module.css";
 
 export function AppointmentsView() {
-  const { appointment } = useCare();
-  const upcoming = appointment?.status === "confirmed" ? appointment : null;
-  const cancelled = appointment?.status === "cancelled" ? appointment : null;
+  const care = useCare();
+  const history = care.appointments.length > 0 ? care.appointments : care.appointment ? [care.appointment] : [];
+  const upcoming = history.filter((item) => isOpenAppointment(item.status));
+  const cancelled = history.filter((item) => item.status === "cancelled");
 
   return (
     <div className={styles.page}>
@@ -20,23 +22,28 @@ export function AppointmentsView() {
       <div className={styles.stackWide}>
         <section className={styles.card}>
           <h2>Upcoming</h2>
-          {upcoming ? (
-            <article className={styles.visitRow}>
+          {upcoming.length > 0 ? upcoming.map((item) => (
+            <article className={styles.visitRow} key={item.appointmentId ?? item.reference}>
               <div>
-                <strong>{upcoming.visitType}</strong>
-                <p>{upcoming.provider}</p>
+                <strong>{item.visitType}</strong>
+                <p>{item.provider}</p>
+                <p>{item.simulated ? "Simulated request · office not contacted" : item.status}</p>
                 <p>
-                  <IconCalendar /> {upcoming.longDate} · {upcoming.timeLabel}
+                  <IconCalendar /> {item.longDate} · {item.timeLabel}
                 </p>
                 <p>
-                  <IconPin /> {upcoming.address}, {upcoming.cityLine}
+                  <IconPin /> {item.address}, {item.cityLine}
                 </p>
               </div>
-              <Link className={styles.btnOutline} href="/appointments/confirmed">
+              <Link
+                className={styles.btnOutline}
+                href="/appointments/confirmed"
+                onClick={() => care.focusAppointment(item.appointmentId ?? item.reference)}
+              >
                 View
               </Link>
             </article>
-          ) : (
+          )) : (
             <div className={styles.empty}>
               <p>No upcoming visits.</p>
               <Link className={styles.btnPrimary} href="/assistant">
@@ -47,19 +54,20 @@ export function AppointmentsView() {
         </section>
         <section className={styles.card}>
           <h2>Cancelled</h2>
-          {cancelled ? (
-            <article className={styles.visitRow}>
+          {cancelled.length > 0 ? cancelled.map((item) => (
+            <article className={styles.visitRow} key={item.appointmentId ?? item.reference}>
               <div>
-                <strong>{cancelled.visitType}</strong>
+                <strong>{item.visitType}</strong>
                 <p>
-                  {cancelled.provider} · {cancelled.dateLabel}
+                  {item.provider} · {item.dateLabel}
                 </p>
+                <p>Cancelled · office not contacted</p>
               </div>
               <Link className={styles.btnOutline} href="/appointments/results">
                 Book again
               </Link>
             </article>
-          ) : (
+          )) : (
             <p className={styles.cardLede}>Cancelled visits will show up here.</p>
           )}
         </section>

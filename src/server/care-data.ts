@@ -7,6 +7,7 @@ import {
   defaultSnapshot,
   formatPhone,
   locationLabel,
+  isOpenAppointment,
   paymentLabel,
   slotsFor,
   type CareBootstrap,
@@ -14,6 +15,7 @@ import {
   type Profile,
   type Slot,
 } from "@/lib/careway/model";
+import { listAppointments } from "@/server/database/repositories/appointments";
 import { listInsurancePolicies } from "@/server/database/repositories/insurance";
 import { findPatientProfile } from "@/server/database/repositories/profiles";
 import { findOpenCareRequest } from "@/server/database/repositories/care-requests";
@@ -72,7 +74,7 @@ export async function loadCareBootstrap(session: Session): Promise<CareBootstrap
   const name = session.user?.name || "Assurance member";
   try {
     const user = await resolveDatabaseUser(session);
-    const [record, policies, providerGroups, savedCareRequest] = await Promise.all([
+    const [record, policies, providerGroups, savedCareRequest, appointments] = await Promise.all([
       findPatientProfile(user.userId),
       listInsurancePolicies(user.userId),
       Promise.all(
@@ -82,6 +84,10 @@ export async function loadCareBootstrap(session: Session): Promise<CareBootstrap
       ),
       findOpenCareRequest(user.userId).catch((error: { errorNum?: number }) => {
         if (error?.errorNum === 942) return null;
+        throw error;
+      }),
+      listAppointments(user.userId).catch((error: { errorNum?: number }) => {
+        if (error?.errorNum === 942) return [];
         throw error;
       }),
     ]);
@@ -113,12 +119,14 @@ export async function loadCareBootstrap(session: Session): Promise<CareBootstrap
         paymentLabel: paymentLabel(profile.payment),
       };
     }
+    snapshot.appointment = appointments.find((item) => isOpenAppointment(item.status)) ?? appointments[0] ?? null;
     return {
       mode: "database",
       snapshot,
       insurancePolicyId: policy?.policyId ?? null,
       providerSlots: slotsFromProviders(providerGroups.flat()),
       savedCareRequest,
+      appointments,
       message: null,
     };
   } catch (error) {
@@ -129,6 +137,7 @@ export async function loadCareBootstrap(session: Session): Promise<CareBootstrap
       insurancePolicyId: null,
       providerSlots: slotsFor("dental", "Flexible"),
       savedCareRequest: null,
+      appointments: [],
       message: "Development data — database disconnected. Changes last only for this browser session.",
     };
   }

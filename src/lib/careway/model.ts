@@ -49,9 +49,17 @@ export type Slot = {
   endIso: string;
 };
 
+export type AppointmentStatus = "requested" | "confirmed" | "failed" | "cancelled" | "simulated";
+
 export type Appointment = Slot & {
-  status: "confirmed" | "cancelled";
+  appointmentId: string | null;
+  status: AppointmentStatus;
+  simulated: boolean;
 };
+
+export function isOpenAppointment(status: AppointmentStatus) {
+  return status === "simulated" || status === "requested" || status === "confirmed";
+}
 
 export type ChatMessage = {
   id: string;
@@ -124,6 +132,7 @@ export type CareBootstrap = {
   insurancePolicyId: string | null;
   providerSlots: Slot[];
   savedCareRequest: SavedCareRequest | null;
+  appointments: Appointment[];
   message: string | null;
 };
 
@@ -818,7 +827,7 @@ export function toIcs(appointment: Appointment, name: string) {
     `DTEND:${appointment.endIso}`,
     `SUMMARY:${appointment.visitType} at ${appointment.provider}`,
     `LOCATION:${appointment.address}, ${appointment.cityLine}`,
-    `DESCRIPTION:Appointment for ${name}. Reference ${appointment.reference}.`,
+    `DESCRIPTION:${appointment.simulated ? "Simulated appointment request" : "Appointment"} for ${name}. Reference ${appointment.reference}.`,
     "END:VEVENT",
     "END:VCALENDAR",
   ].join("\r\n");

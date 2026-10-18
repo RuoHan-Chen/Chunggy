@@ -6,31 +6,81 @@ import { useState } from "react";
 
 import { IconCalendar, IconCard, IconCheck, IconClock, IconPin, IconTooth, IconUser } from "@/components/careway/icons";
 import { useCare } from "@/components/careway/provider";
-import { bornLabel, digits, paymentTitle } from "@/lib/careway/model";
+import { bornLabel, digits, formatPhone, parseDob, paymentTitle } from "@/lib/careway/model";
 import styles from "@/components/careway/careway.module.css";
 
 export function ReviewView() {
   const care = useCare();
   const router = useRouter();
   const [share, setShare] = useState(false);
-  const [sms, setSms] = useState(true);
+  const [sms, setSms] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [profileDirty, setProfileDirty] = useState(false);
+  const [insuranceDirty, setInsuranceDirty] = useState(false);
   const [error, setError] = useState("");
   const slot = care.draft;
   const phoneReady = digits(care.profile.phone).length === 10;
+  const nameReady = Boolean(care.profile.fullName.trim());
+  const dobReady = Boolean(parseDob(care.profile.dateOfBirth));
   const name = care.profile.fullName || care.user.name || "Add your name";
+  const needsInsurance = care.profile.payment === "insurance";
+  const insuranceReady = Boolean(
+    care.profile.insuranceCompany.trim() && care.profile.memberId.trim() && care.profile.planName.trim(),
+  );
+  const savedOption = care.savedCareRequest?.options.some((option) => option.id === slot?.id) ?? false;
 
-  function confirm() {
-    if (!slot) return;
+  async function confirm() {
+    if (!slot || submitting) return;
+    if (!nameReady) {
+      setError("Add your name before requesting this visit.");
+      return;
+    }
     if (!phoneReady) {
       setError("Add a phone number before requesting this visit.");
+      return;
+    }
+    if (!dobReady) {
+      setError("Add a date of birth before requesting this visit.");
+      return;
+    }
+    if (needsInsurance && !insuranceReady) {
+      setError("Enter the insurer, member ID, and plan name before requesting this visit.");
       return;
     }
     if (!share) {
       setError("Allow Assurance to share these details with the office.");
       return;
     }
-    care.bookDraft(sms);
-    router.push("/appointments/confirmed");
+    if (care.dataMode === "database" && !savedOption) {
+      setError("Choose a time from the saved shortlist.");
+      return;
+    }
+    setSubmitting(true);
+    setError("");
+    try {
+      if (care.dataMode === "database" && profileDirty) {
+        const profileResult = await care.saveProfile();
+        if (!profileResult.ok) {
+          setError(profileResult.message);
+          return;
+        }
+      }
+      if (care.dataMode === "database" && needsInsurance && insuranceDirty) {
+        const insuranceResult = await care.saveInsurance();
+        if (!insuranceResult.ok) {
+          setError(insuranceResult.message);
+          return;
+        }
+      }
+      const result = await care.requestAppointment(sms);
+      if (!result.ok) {
+        setError(result.message);
+        return;
+      }
+      router.push("/appointments/confirmed");
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   if (!slot) {
@@ -56,7 +106,7 @@ export function ReviewView() {
       </p>
       <header className={styles.pageIntro}>
         <h1>Review before we book</h1>
-        <p>Take a moment to confirm your details. We’ll request this appointment with the office.</p>
+        <p>Confirm your saved details before a simulated request is stored. The office is not contacted.</p>
       </header>
       <ol className={styles.stepperLeft}>
         <li className={styles.stepDone}>
@@ -111,10 +161,53 @@ export function ReviewView() {
               </span>
               <div>
                 <strong>{name}</strong>
-                <p>{bornLabel(care.profile.dateOfBirth)}</p>
+                <p>{dobReady ? bornLabel(care.profile.dateOfBirth) : "Date of birth needed"}</p>
                 <p>{phoneReady ? care.profile.phone : "Phone number needed"}</p>
               </div>
             </div>
+            {!care.profile.fullName.trim() ? (
+              <label className={styles.field}>
+                Full name
+                <input
+                  className={styles.input}
+                  onChange={(event) => {
+                    setProfileDirty(true);
+                    care.updateProfile({ fullName: event.target.value });
+                  }}
+                  value={care.profile.fullName}
+                />
+              </label>
+            ) : null}
+            {!dobReady ? (
+              <label className={styles.field}>
+                Date of birth
+                <input
+                  className={styles.input}
+                  inputMode="numeric"
+                  onChange={(event) => {
+                    setProfileDirty(true);
+                    care.updateProfile({ dateOfBirth: event.target.value });
+                  }}
+                  placeholder="MM / DD / YYYY"
+                  value={care.profile.dateOfBirth}
+                />
+              </label>
+            ) : null}
+            {!phoneReady ? (
+              <label className={styles.field}>
+                Phone number
+                <input
+                  className={styles.input}
+                  inputMode="tel"
+                  onChange={(event) => {
+                    setProfileDirty(true);
+                    care.updateProfile({ phone: formatPhone(event.target.value) });
+                  }}
+                  placeholder="(312) 555-0100"
+                  value={care.profile.phone}
+                />
+              </label>
+            ) : null}
           </section>
 
           <section className={styles.card}>
@@ -129,9 +222,54 @@ export function ReviewView() {
               <div>
                 <strong>{paymentTitle(care.profile.payment)}</strong>
                 <p>Estimated visit cost {slot.estimate}</p>
-                <p>Final amount confirmed by the office.</p>
+                <p>Estimate only. The office has not confirmed a price.</p>
+                {needsInsurance ? (
+                  <p>
+                    {insuranceReady
+                      ? `${care.profile.insuranceCompany} · ${care.profile.planName} · Member ${care.profile.memberId}`
+                      : "Insurer, member ID, and plan name are needed."}
+                  </p>
+                ) : null}
+                <p>Network status unknown. Eligibility and deductibles were not checked.</p>
               </div>
             </div>
+            {needsInsurance && !insuranceReady ? (
+              <>
+                <label className={styles.field}>
+                  Insurance company
+                  <input
+                    className={styles.input}
+                    onChange={(event) => {
+                      setInsuranceDirty(true);
+                      care.updateProfile({ insuranceCompany: event.target.value });
+                    }}
+                    value={care.profile.insuranceCompany}
+                  />
+                </label>
+                <label className={styles.field}>
+                  Member ID
+                  <input
+                    className={styles.input}
+                    onChange={(event) => {
+                      setInsuranceDirty(true);
+                      care.updateProfile({ memberId: event.target.value });
+                    }}
+                    value={care.profile.memberId}
+                  />
+                </label>
+                <label className={styles.field}>
+                  Plan name
+                  <input
+                    className={styles.input}
+                    onChange={(event) => {
+                      setInsuranceDirty(true);
+                      care.updateProfile({ planName: event.target.value });
+                    }}
+                    value={care.profile.planName}
+                  />
+                </label>
+              </>
+            ) : null}
           </section>
 
           <section className={styles.card}>
@@ -156,11 +294,11 @@ export function ReviewView() {
                 type="checkbox"
               />
               <span>
-                Send me SMS reminders (optional)
+                Request SMS reminders (optional)
                 <small>
                   {phoneReady
-                    ? `Get appointment updates and reminders at ${care.profile.phone}.`
-                    : "Add a phone number to get text reminders."}
+                    ? `No text is sent. A skipped reminder is recorded for ${care.profile.phone}.`
+                    : "Add a phone number before requesting a reminder."}
                 </small>
               </span>
             </label>
@@ -190,11 +328,11 @@ export function ReviewView() {
           <h3>Payment</h3>
           <p>{paymentTitle(care.profile.payment)}</p>
           <p>Estimated visit cost {slot.estimate}</p>
-          <p>Final amount confirmed by the office.</p>
-          <button className={styles.btnPrimaryWide} onClick={confirm} type="button">
-            Confirm and request booking
+          <p>Network status unknown.</p>
+          <button className={styles.btnPrimaryWide} disabled={submitting || care.saving} onClick={confirm} type="button">
+            {submitting || care.saving ? "Saving request…" : "Confirm and request booking"}
           </button>
-          <p className={styles.fine}>You’ll see confirmation after the office accepts.</p>
+          <p className={styles.fine}>This stores a simulated request. The office is not contacted, and the visit is not booked.</p>
         </aside>
       </div>
 
