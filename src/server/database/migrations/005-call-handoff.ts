@@ -1,0 +1,23 @@
+import type { Migration } from "./types";
+
+const change = (sql: string) => ({ sql, ignoreOracleErrors: [1430, 2264, 2275, 2443] });
+
+export const callHandoffMigration: Migration = {
+  version: 5,
+  name: "phase_3_call_handoff",
+  statements: [
+    change(`ALTER TABLE CONVERSATIONS ADD (
+      DRAFT_JSON VARCHAR2(4000 CHAR)
+    )`),
+    change(`ALTER TABLE OUTREACH_ATTEMPTS DROP CONSTRAINT CK_OUTREACH_STATUS`),
+    change(`ALTER TABLE OUTREACH_ATTEMPTS ADD CONSTRAINT CK_OUTREACH_STATUS CHECK (
+      STATUS IN ('SIMULATED', 'SKIPPED', 'FAILED', 'READY_FOR_CALL', 'CALLING', 'COMPLETED')
+    )`),
+    change(`ALTER TABLE OUTREACH_ATTEMPTS DROP CONSTRAINT CK_OUTREACH_CHANNEL`),
+    change(`ALTER TABLE OUTREACH_ATTEMPTS ADD CONSTRAINT CK_OUTREACH_CHANNEL CHECK (
+      CHANNEL IN ('WEB', 'SMS', 'PHONE')
+    )`),
+    change(`ALTER TABLE CARE_REQUESTS ADD CONSTRAINT FK_CARE_REQ_CONV
+      FOREIGN KEY (SOURCE_CONVERSATION_ID) REFERENCES CONVERSATIONS(CONVERSATION_ID)`),
+  ],
+};

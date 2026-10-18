@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { IconBot, IconPaperclip, IconSend } from "@/components/careway/icons";
 import { useCare } from "@/components/careway/provider";
+import { displayPhone, workflowLabel } from "@/lib/careway/call-flow";
 import { bookingChoices } from "@/lib/careway/model";
 import styles from "@/components/careway/careway.module.css";
 
@@ -25,6 +26,13 @@ export function AssistantView() {
   const [renameDraft, setRenameDraft] = useState("");
   const transcriptRef = useRef<HTMLDivElement>(null);
   const choices = bookingChoices(care.bookingStep, care.profile.zip);
+  const offices = care.providerSlots.filter((slot, index, all) =>
+    slot.visitType === care.preferences.visitType && all.findIndex((item) => item.provider === slot.provider) === index,
+  );
+  const reviewing = care.activeChat.callDraft?.workflow === "review";
+  const callFailed = (care.activeChat.callDraft?.declineCount ?? 0) >= 2;
+  const callResult = care.activeChat.callDraft?.result;
+  const selectedOffice = offices.find((office) => office.locationId === care.activeChat.callDraft?.locationId);
 
   useEffect(() => {
     const node = transcriptRef.current;
@@ -120,11 +128,9 @@ export function AssistantView() {
               );
             })}
           </div>
-          <p className={styles.temporaryNotice}>
-            {care.chatStorage === "account"
-              ? "Conversations you start are saved to your account and stay available after you refresh."
-              : "Chats stay in this session and reset when you refresh."}
-          </p>
+          {care.chatStorage === "session" ? (
+            <p className={styles.temporaryNotice}>Chats stay in this session and reset when you refresh.</p>
+          ) : null}
         </aside>
 
         <section className={styles.chatCard}>
@@ -132,9 +138,13 @@ export function AssistantView() {
             <div>
               <strong>{care.activeChat.title}</strong>
               <small>
-                {care.chatStorage === "account"
-                  ? care.activeChat.stored ? "Saved to your account" : "Saves with your next message"
-                  : "This chat stays in this session"}
+                {care.callingOffice
+                  ? `Calling ${care.callingOffice}`
+                  : care.bookingStep !== "idle"
+                    ? `${workflowLabel(care.activeChat.callDraft?.workflow ?? "gathering")} · ${care.chatStorage === "account" && care.activeChat.stored ? "saved to your account" : "this session"}`
+                    : care.chatStorage === "account"
+                      ? care.activeChat.stored ? "Saved to your account" : "Saves with your next message"
+                      : "This chat stays in this session"}
               </small>
             </div>
             <div className={styles.chatTools}>
@@ -219,8 +229,50 @@ export function AssistantView() {
             {care.activeChat.pending ? (
               <div aria-live="polite" className={styles.botGroup}>
                 <span className={styles.botAvatar}><IconBot /></span>
-                <p className={styles.typingBubble}>Thinking…</p>
+                <p className={styles.typingBubble}>{care.callingOffice ? `On the phone with ${care.callingOffice}…` : "Thinking…"}</p>
               </div>
+            ) : null}
+            {callResult && !callResult.savedForFollowUp ? (
+              <div className={styles.returnedTimes}>
+                <strong>Office response</strong>
+                {callResult.availableTimes.length ? (
+                  callResult.availableTimes.map((time, index) => (
+                    <button
+                      className={styles.returnedTime}
+                      disabled={!time.optionId || !time.startIso}
+                      key={`${time.label}-${index}`}
+                      onClick={() => {
+                        if (!time.optionId || !time.startIso || !selectedOffice) return;
+                        const start = new Date(time.startIso);
+                        const end = time.endIso ? new Date(time.endIso) : new Date(start.getTime() + 45 * 60_000);
+                        care.selectSlot({
+                          ...selectedOffice,
+                          id: time.optionId,
+                          startIso: start.toISOString(),
+                          endIso: end.toISOString(),
+                          dateLabel: new Intl.DateTimeFormat("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" }).format(start),
+                          longDate: new Intl.DateTimeFormat("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" }).format(start),
+                          timeLabel: new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit" }).format(start),
+                          endLabel: new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit" }).format(end),
+                          period: start.getHours() < 12 ? "morning" : "afternoon",
+                        });
+                        router.push("/appointments/review");
+                      }}
+                      type="button"
+                    >
+                      {time.label}{!time.optionId ? " · Ask office to clarify" : ""}
+                    </button>
+                  ))
+                ) : (
+                  <span>No appointment times were returned.</span>
+                )}
+                <button className={styles.chip} onClick={() => submit("Save for follow-up")} type="button">
+                  Save for follow-up
+                </button>
+              </div>
+            ) : null}
+            {callResult?.savedForFollowUp ? (
+              <p className={styles.followUpSaved}>Saved for follow-up. The office response will remain in this conversation.</p>
             ) : null}
             {choices.length > 0 ? (
               <div className={styles.chips}>
@@ -229,7 +281,31 @@ export function AssistantView() {
                 ))}
               </div>
             ) : null}
-            {care.bookingStep === "ready" ? (
+            {care.bookingStep === "ready" && !reviewing && !care.callingOffice && !callFailed && !callResult ? (
+              <div className={styles.officeCards}>
+                {offices.map((office) => (
+                  <button
+                    className={styles.officeCard}
+                    disabled={care.activeChat.pending}
+                    key={office.id}
+                    onClick={() => submit(office.provider)}
+                    type="button"
+                  >
+                    <strong>{office.provider}</strong>
+                    <span>{office.address}, {office.cityLine}</span>
+                    <span>{office.rating} rating · Estimated {office.estimate}</span>
+                    <span>{displayPhone(office.phone ?? "")}</span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
+            {reviewing && !care.callingOffice ? (
+              <div className={styles.chips}>
+                <button className={styles.btnPrimary} disabled={care.activeChat.pending} onClick={() => submit("Real Vapi call")} type="button">Real Vapi call</button>
+                <button className={styles.btnOutline} disabled={care.activeChat.pending} onClick={() => submit("Fake demo call")} type="button">Fake demo call</button>
+              </div>
+            ) : null}
+            {care.bookingStep === "ready" && !reviewing && !care.callingOffice && !callFailed && !callResult ? (
               <div className={styles.chips}>
                 <button
                   className={styles.btnPrimary}
@@ -251,6 +327,18 @@ export function AssistantView() {
               </div>
             ) : null}
           </div>
+          {care.callingOffice ? (
+            <div className={styles.callingBanner} role="status">
+              <strong>Calling {care.callingOffice}</strong>
+              <span>Please wait here. The result will appear in this chat when the call finishes.</span>
+            </div>
+          ) : null}
+          {callFailed && !care.callingOffice ? (
+            <div className={styles.callFailed} role="status">
+              <strong>Call failed</strong>
+              <span>No further call will be placed right now. Try again later.</span>
+            </div>
+          ) : null}
           {care.activeChat.error && !care.activeChat.pending ? (
             <div className={styles.chatError} role="alert">
               <strong>Message not completed</strong>

@@ -59,8 +59,10 @@ function slotsFromProviders(rows: Awaited<ReturnType<typeof listProviderServices
     return {
       ...template,
       id: `${row.locationId}-${row.appointmentType}`,
+      locationId: row.locationId,
       visitType: row.appointmentType,
       provider: row.providerName,
+      phone: row.phoneE164 ?? "",
       duration: `${row.durationMinutes} min`,
       address: row.addressLine1,
       cityLine: `${row.city}, ${row.region} ${row.postalCode}`,

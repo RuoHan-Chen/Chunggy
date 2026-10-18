@@ -72,6 +72,7 @@ export async function requestSavedAppointment(input: {
   userId: string;
   optionId: string;
   shareSms: boolean;
+  callMode: "real" | "fake";
 }) {
   return withTransaction(async (connection) => {
     const existing = await connection.execute<{ appointmentId: string }>(
@@ -89,7 +90,7 @@ export async function requestSavedAppointment(input: {
     if (existingId) return loadAppointment(connection, input.userId, existingId);
 
     const appointmentId = crypto.randomUUID();
-    const confirmationReference = `SIM-${appointmentId.slice(0, 6).toUpperCase()}`;
+    const confirmationReference = `REQ-${appointmentId.slice(0, 6).toUpperCase()}`;
     const inserted = await connection.execute(
       `INSERT INTO APPOINTMENTS (
          APPOINTMENT_ID, USER_ID, REQUEST_ID, OPTION_ID, LOCATION_ID, TYPE_ID,
@@ -104,13 +105,16 @@ export async function requestSavedAppointment(input: {
               option_row.TYPE_ID,
               option_row.OFFERED_START,
               option_row.OFFERED_END,
-              'SIMULATED',
-              :confirmationReference,
+              CASE WHEN :callMode = 'real' THEN 'REQUESTED' ELSE 'SIMULATED' END,
+              CASE
+                WHEN :callMode = 'real' THEN :confirmationReference
+                ELSE 'SIM-' || UPPER(SUBSTR(:appointmentId, 1, 6))
+              END,
               option_row.ESTIMATE_MIN,
               option_row.ESTIMATE_MAX,
               option_row.CURRENCY,
               'UNKNOWN',
-              1
+              CASE WHEN :callMode = 'real' THEN 0 ELSE 1 END
        FROM APPOINTMENT_OPTIONS option_row
        JOIN CARE_REQUESTS request ON request.REQUEST_ID = option_row.REQUEST_ID
        WHERE option_row.OPTION_ID = :optionId
@@ -119,6 +123,7 @@ export async function requestSavedAppointment(input: {
       {
         appointmentId,
         confirmationReference,
+        callMode: input.callMode,
         optionId: input.optionId,
         userId: input.userId,
       },
@@ -146,20 +151,22 @@ export async function requestSavedAppointment(input: {
       { outFormat: oracledb.OUT_FORMAT_OBJECT },
     );
     const linked = request.rows?.[0];
-    await connection.execute(
-      `INSERT INTO OUTREACH_ATTEMPTS (
-         ATTEMPT_ID, REQUEST_ID, APPOINTMENT_ID, CHANNEL, STATUS, EXTERNAL_REFERENCE, RESULT_SUMMARY
-       ) VALUES (
-         :attemptId, :requestId, :appointmentId, 'WEB', 'SIMULATED', :confirmationReference,
-         'No office was contacted. This request is a labeled simulation.'
-       )`,
-      {
-        attemptId: crypto.randomUUID(),
-        requestId: linked?.requestId ?? null,
-        appointmentId,
-        confirmationReference,
-      },
-    );
+    if (input.callMode === "fake") {
+      await connection.execute(
+        `INSERT INTO OUTREACH_ATTEMPTS (
+           ATTEMPT_ID, REQUEST_ID, APPOINTMENT_ID, CHANNEL, STATUS, EXTERNAL_REFERENCE, RESULT_SUMMARY
+         ) VALUES (
+           :attemptId, :requestId, :appointmentId, 'PHONE', 'SIMULATED', :confirmationReference,
+           'Fake booking call completed. No office was contacted.'
+         )`,
+        {
+          attemptId: crypto.randomUUID(),
+          requestId: linked?.requestId ?? null,
+          appointmentId,
+          confirmationReference,
+        },
+      );
+    }
     if (input.shareSms) {
       await connection.execute(
         `INSERT INTO OUTREACH_ATTEMPTS (
@@ -178,6 +185,51 @@ export async function requestSavedAppointment(input: {
     }
 
     return loadAppointment(connection, input.userId, appointmentId);
+  });
+}
+
+export async function findBookingCallTarget(userId: string, optionId: string) {
+  return withTransaction(async (connection) => {
+    const result = await connection.execute<{
+      requestId: string;
+      locationId: string;
+      providerName: string;
+      phoneE164: string | null;
+      visitType: string;
+      offeredStart: Date;
+      offeredEnd: Date | null;
+      failedBookingCalls: number;
+    }>(
+      `SELECT request.REQUEST_ID AS "requestId",
+              option_row.LOCATION_ID AS "locationId",
+              option_row.PROVIDER_NAME AS "providerName",
+              location.PHONE_E164 AS "phoneE164",
+              appointment_type.SLUG AS "visitType",
+              option_row.OFFERED_START AS "offeredStart",
+              option_row.OFFERED_END AS "offeredEnd",
+              (SELECT COUNT(*)
+               FROM OUTREACH_ATTEMPTS attempt
+               WHERE attempt.REQUEST_ID = request.REQUEST_ID
+                 AND attempt.STATUS = 'FAILED'
+                 AND attempt.RESULT_SUMMARY LIKE 'BOOKING_CALL_FAILED:%') AS "failedBookingCalls"
+       FROM APPOINTMENT_OPTIONS option_row
+       JOIN CARE_REQUESTS request ON request.REQUEST_ID = option_row.REQUEST_ID
+       JOIN PROVIDER_LOCATIONS location ON location.LOCATION_ID = option_row.LOCATION_ID
+       JOIN APPOINTMENT_TYPES appointment_type ON appointment_type.TYPE_ID = option_row.TYPE_ID
+       WHERE option_row.OPTION_ID = :optionId
+         AND request.USER_ID = :userId
+         AND option_row.STATUS = 'SHOWN'
+         AND location.IS_ACTIVE = 1`,
+      { optionId, userId },
+      { outFormat: oracledb.OUT_FORMAT_OBJECT },
+    );
+    const row = result.rows?.[0];
+    if (!row) return null;
+    return {
+      ...row,
+      offeredStart: new Date(row.offeredStart).toISOString(),
+      offeredEnd: row.offeredEnd ? new Date(row.offeredEnd).toISOString() : null,
+    };
   });
 }
 

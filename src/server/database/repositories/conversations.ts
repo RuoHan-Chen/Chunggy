@@ -2,6 +2,7 @@ import "server-only";
 
 import oracledb from "oracledb";
 
+import { parseCallDraft } from "@/lib/careway/call-flow";
 import {
   chatFollowUpError,
   clock,
@@ -24,6 +25,7 @@ type ConversationRow = {
   locationLabel: string | null;
   timePreference: string | null;
   paymentLabel: string | null;
+  draftJson: string | null;
   createdAt: Date;
   updatedAt: Date;
   messageCount: number;
@@ -65,6 +67,7 @@ export type ConversationWrite = {
   preferences: Preferences;
   messages: StoredMessageInput[];
   context: ChatContextItem[];
+  draftJson?: string | null;
 };
 
 export class ConversationAccessError extends Error {
@@ -84,6 +87,7 @@ const conversationColumns = `conversation.CONVERSATION_ID AS "conversationId",
        conversation.LOCATION_LABEL AS "locationLabel",
        conversation.TIME_PREFERENCE AS "timePreference",
        conversation.PAYMENT_LABEL AS "paymentLabel",
+       conversation.DRAFT_JSON AS "draftJson",
        conversation.CREATED_AT AS "createdAt",
        conversation.UPDATED_AT AS "updatedAt"`;
 
@@ -254,6 +258,7 @@ async function upsertConversation(connection: oracledb.Connection, input: Conver
            LOCATION_LABEL = :locationLabel,
            TIME_PREFERENCE = :timePreference,
            PAYMENT_LABEL = :paymentLabel,
+           DRAFT_JSON = :draftJson,
            UPDATED_AT = SYSTIMESTAMP
        WHERE CONVERSATION_ID = :conversationId
          AND USER_ID = :userId
@@ -268,10 +273,10 @@ async function upsertConversation(connection: oracledb.Connection, input: Conver
   await connection.execute(
     `INSERT INTO CONVERSATIONS (
        CONVERSATION_ID, USER_ID, TITLE, AI_PROVIDER, STATUS, BOOKING_STEP,
-       VISIT_TYPE, LOCATION_LABEL, TIME_PREFERENCE, PAYMENT_LABEL
+       VISIT_TYPE, LOCATION_LABEL, TIME_PREFERENCE, PAYMENT_LABEL, DRAFT_JSON
      ) VALUES (
        :conversationId, :userId, :title, :provider, 'ACTIVE', :bookingStep,
-       :visitType, :locationLabel, :timePreference, :paymentLabel
+       :visitType, :locationLabel, :timePreference, :paymentLabel, :draftJson
      )`,
     { ...binds, conversationId: createdId },
   );
@@ -422,6 +427,7 @@ function conversationBinds(input: ConversationWrite) {
     locationLabel: clip(input.preferences.location, 200) || null,
     timePreference: clip(input.preferences.preferredTimes, 80) || null,
     paymentLabel: clip(input.preferences.paymentLabel, 80) || null,
+    draftJson: input.draftJson ? clip(input.draftJson, 4000) : null,
   };
 }
 
@@ -448,6 +454,7 @@ function sessionFromRow(
     provider: row.provider === "OPENAI" ? "openai" : "oci",
     pending: false,
     error: messagesLoaded ? chatFollowUpError(messages) : null,
+    callDraft: parseCallDraft(row.draftJson),
     stored: true,
     messagesLoaded,
     messageCount: messagesLoaded ? messages.length : Number(row.messageCount),

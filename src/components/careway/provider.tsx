@@ -13,7 +13,8 @@ import {
   type ReactNode,
 } from "react";
 
-import { addConversationContextAction, cancelAppointmentAction, completeAssistantAction, deleteConversationAction, openConversationAction, recordConversationAction, removeInsuranceAction, requestAppointmentAction, saveInsuranceAction, saveProfileAction, syncCareRequestAction } from "@/app/care-actions";
+import { addConversationContextAction, cancelAppointmentAction, completeAssistantAction, deleteConversationAction, openConversationAction, placeOfficeCallAction, recordConversationAction, removeInsuranceAction, requestAppointmentAction, saveInsuranceAction, saveProfileAction, syncCareRequestAction } from "@/app/care-actions";
+import { detectReason, emptyCallDraft, formatCallBrief, isCallConfirmation, isFakeCallConfirmation, isSideQuestion, resumeAfterSideQuestion } from "@/lib/careway/call-flow";
 import styles from "@/components/careway/careway.module.css";
 import {
   bookingTurn,
@@ -57,8 +58,8 @@ type CareContextValue = {
   updateProfile: (patch: Partial<Profile>) => void; updatePreferences: (patch: Partial<Preferences>) => void;
   deferOnboarding: () => Promise<CareSaveResult>; completeOnboarding: () => Promise<CareSaveResult>;
   saveProfile: () => Promise<CareSaveResult>; saveInsurance: () => Promise<CareSaveResult>;
-  sendMessage: (text: string) => Promise<void>; selectSlot: (slot: Slot) => void;
-  requestAppointment: (shareSms: boolean) => Promise<CareSaveResult>; cancelAppointment: () => Promise<CareSaveResult>;
+  sendMessage: (text: string) => Promise<void>; callingOffice: string | null; selectSlot: (slot: Slot) => void;
+  requestAppointment: (shareSms: boolean, callMode: "real" | "fake") => Promise<CareSaveResult>; cancelAppointment: () => Promise<CareSaveResult>;
   focusAppointment: (key: string) => void;
   markNoticesRead: () => void; requestCoverage: () => void;
   clearInsurance: () => Promise<CareSaveResult>;
@@ -119,6 +120,7 @@ export function CareProvider({ user, initialData, children }: { user: CareUser; 
   const [saving, setSaving] = useState(false);
   const [chatSessions, setChatSessions] = useState<ChatSession[]>(() => initialData.conversations.length > 0 ? initialData.conversations : [chatFromSnapshot(initialData.snapshot)]);
   const [activeChatId, setActiveChatId] = useState(initialData.conversations[0]?.id ?? "chat-initial");
+  const [callingOffice, setCallingOffice] = useState<string | null>(null);
   const storedIds = useRef(new Map<string, string>());
   const chatSaves = useRef(new Map<string, Promise<ChatSession>>());
   const [previewApplied, setPreviewApplied] = useState(false);
@@ -202,6 +204,7 @@ export function CareProvider({ user, initialData, children }: { user: CareUser; 
           preferences: session.preferences,
           messages: knownId ? newMessages : [...session.messages.map(outgoingMessage), ...newMessages],
           context: knownId ? [] : session.context,
+          draftJson: JSON.stringify(session.callDraft ?? emptyCallDraft()),
         });
         if (!result.ok || !result.session) throw new Error(result.message);
         storedIds.current.set(session.id, result.session.id);
@@ -297,7 +300,7 @@ export function CareProvider({ user, initialData, children }: { user: CareUser; 
       bookingStep: activeChat.bookingStep, draft: snapshot.draft,
       appointment: snapshot.appointment,       notices: snapshot.notices, providerSlots: initialData.providerSlots,
       savedCareRequest, appointments,
-      chatSessions, activeChatId: activeChat.id, activeChat, chatStorage: persistChats ? "account" : "session",
+      chatSessions, activeChatId: activeChat.id, activeChat, chatStorage: persistChats ? "account" : "session", callingOffice,
       retryDatabase: () => router.refresh(),
       createChat() {
         const session = emptyChatSession(snapshot.profile, nextChatId());
@@ -484,12 +487,190 @@ export function CareProvider({ user, initialData, children }: { user: CareUser; 
         if (!trimmed || activeChat.pending) return;
         const session = await ensureLoaded(activeChat);
         const time = clock();
-        const turn = bookingTurn(trimmed, session.bookingStep, session.preferences, snapshot.profile);
+        const draft = session.callDraft ?? emptyCallDraft();
+        const offices = initialData.providerSlots.filter((slot) => slot.visitType === session.preferences.visitType);
+        const chosenOffice = offices.find((slot) => slot.provider.toLowerCase() === trimmed.toLowerCase());
+        const confirming = isCallConfirmation(trimmed) && draft.workflow === "review" && Boolean(draft.officeName);
+        const simulateCall = isFakeCallConfirmation(trimmed);
+        const sideQuestion = session.bookingStep !== "idle" && isSideQuestion(trimmed) && !chosenOffice && !confirming;
+        const savingFollowUp = trimmed.toLowerCase() === "save for follow-up" && Boolean(draft.result);
         const stamp = Date.now();
         const sessionId = session.id;
         const userMessage: ChatMessage = { id: `user-${stamp}`, role: "user", text: trimmed, time };
-        const guidedBooking = session.bookingStep !== "idle" || turn.step !== "idle";
         const nextTitle = session.title === "New chat" ? chatTitleFromMessage(trimmed) : session.title;
+
+        if (savingFollowUp && draft.result) {
+          const reply = "Saved for follow-up. The office response and available times will remain in this conversation.";
+          const nextDraft = { ...draft, result: { ...draft.result, savedForFollowUp: true } };
+          const next = { ...session, title: nextTitle, callDraft: nextDraft, error: null };
+          updateChat(sessionId, (current) => ({
+            ...next,
+            messages: [...current.messages, userMessage, { id: `assistant-${stamp}`, role: "assistant", text: reply, time, status: "complete" }],
+          }));
+          if (!persistChats) return;
+          try {
+            const saved = await persistChat(next, [
+              { role: "user", text: trimmed, status: "complete" },
+              { role: "assistant", text: reply, status: "complete" },
+            ]);
+            installChat(sessionId, { ...saved, pending: false, error: null });
+          } catch (error) {
+            updateChat(sessionId, (current) => ({ ...current, error: error instanceof Error ? error.message : "The follow-up request could not be saved." }));
+          }
+          return;
+        }
+
+        if (sideQuestion) {
+          const resume = resumeAfterSideQuestion(session.bookingStep, session.preferences, draft);
+          updateChat(sessionId, (current) => ({
+            ...current,
+            title: nextTitle,
+            pending: true,
+            error: null,
+            messages: [...current.messages, userMessage],
+          }));
+          try {
+            const response = await fetch(providerEndpoint(session.provider), {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                message: trimmed,
+                history: session.messages.filter((message) => message.status !== "failed").slice(-12).map((message) => ({
+                  role: message.role,
+                  text: message.text.slice(0, 2_000),
+                })),
+                context: [],
+              }),
+            });
+            const payload = (await response.json()) as ChatApiResponse;
+            const answer = response.ok && payload.text ? payload.text : describeChatError(response.status, payload, session.provider);
+            const reply = `${answer}\n\n${resume}`;
+            const next = { ...session, title: nextTitle, callDraft: draft, pending: false, error: null };
+            updateChat(sessionId, (current) => ({
+              ...next,
+              messages: [...current.messages, { id: `assistant-${Date.now()}`, role: "assistant", text: reply, time: clock(), provider: session.provider, model: payload.model, status: "complete" }],
+            }));
+            if (persistChats) {
+              const saved = await persistChat(next, [
+                { role: "user", text: trimmed, status: "complete" },
+                { role: "assistant", text: reply, provider: session.provider, model: payload.model ?? null, status: "complete" },
+              ]);
+              installChat(sessionId, { ...saved, pending: false, error: null });
+            }
+          } catch {
+            updateChat(sessionId, (current) => ({ ...current, pending: false, error: "The assistant could not be reached. Check your connection and try again." }));
+          }
+          return;
+        }
+
+        if (chosenOffice && session.bookingStep === "ready" && draft.declineCount >= 2) {
+          const reply = `Call failed. ${draft.officeName || chosenOffice.provider} declined the call twice, so no further call will be placed right now. Try again later.`;
+          const next = { ...session, title: nextTitle, callDraft: { ...draft, workflow: "failed" as const, resultText: reply }, error: null };
+          updateChat(sessionId, (current) => ({
+            ...next,
+            messages: [...current.messages, userMessage, { id: `assistant-${stamp}`, role: "assistant", text: reply, time, status: "complete" }],
+          }));
+          if (!persistChats) return;
+          try {
+            const saved = await persistChat(next, [
+              { role: "user", text: trimmed, status: "complete" },
+              { role: "assistant", text: reply, status: "complete" },
+            ]);
+            installChat(sessionId, { ...saved, pending: false, error: null });
+          } catch (error) {
+            updateChat(sessionId, (current) => ({ ...current, error: error instanceof Error ? error.message : "The call result could not be saved." }));
+          }
+          return;
+        }
+
+        if (chosenOffice && session.bookingStep === "ready") {
+          const nextDraft = {
+            ...draft,
+            workflow: "review" as const,
+            reason: draft.reason || detectReason(`${session.messages.map((message) => message.text).join(" ")} ${trimmed}`),
+            officeName: chosenOffice.provider,
+            officePhone: chosenOffice.phone ?? "",
+            locationId: chosenOffice.locationId ?? "",
+          };
+          const reply = formatCallBrief(snapshot.profile, session.preferences, nextDraft);
+          const next = { ...session, title: nextTitle, bookingStep: "ready" as const, callDraft: nextDraft, error: null };
+          updateChat(sessionId, (current) => ({
+            ...next,
+            messages: [...current.messages, userMessage, { id: `assistant-${stamp}`, role: "assistant", text: reply, time, status: "complete" }],
+          }));
+          if (!persistChats) return;
+          try {
+            const saved = await persistChat(next, [
+              { role: "user", text: trimmed, status: "complete" },
+              { role: "assistant", text: reply, status: "complete" },
+            ]);
+            installChat(sessionId, { ...saved, pending: false, error: null });
+          } catch (error) {
+            updateChat(sessionId, (current) => ({ ...current, error: error instanceof Error ? error.message : "The call brief could not be saved." }));
+          }
+          return;
+        }
+
+        if (confirming) {
+          setCallingOffice(draft.officeName);
+          const callingDraft = { ...draft, workflow: "calling" as const };
+          updateChat(sessionId, (current) => ({
+            ...current,
+            pending: true,
+            error: null,
+            callDraft: callingDraft,
+            messages: [...current.messages, userMessage],
+          }));
+          let conversationId = session.stored ? session.id : storedIds.current.get(session.id) ?? null;
+          if (persistChats) {
+            try {
+              const saved = await persistChat({ ...session, title: nextTitle, callDraft: callingDraft }, [
+                { role: "user", text: trimmed, status: "complete" },
+              ]);
+              conversationId = saved.id;
+              installChat(sessionId, { ...saved, pending: true, callDraft: callingDraft });
+            } catch (error) {
+              setCallingOffice(null);
+              updateChat(sessionId, (current) => ({
+                ...current,
+                pending: false,
+                error: error instanceof Error ? error.message : "The confirmation could not be saved.",
+              }));
+              return;
+            }
+          }
+          try {
+            const result = await placeOfficeCallAction({
+              conversationId,
+              visitType: session.preferences.visitType,
+              postalCode: snapshot.profile.zip,
+              timePreference: session.preferences.preferredTimes,
+              paymentPreference: snapshot.profile.payment,
+              locationId: draft.locationId,
+              reason: draft.reason,
+              declineCount: draft.declineCount,
+              simulate: simulateCall,
+            });
+            const finished = { ...session, title: nextTitle, callDraft: result.callDraft, pending: false, error: null };
+            if (persistChats && conversationId) {
+              const saved = await persistChat({ ...finished, id: conversationId, stored: true }, [
+                { role: "assistant", text: result.reply, status: "complete", error: null },
+              ]);
+              installChat(conversationId, { ...saved, pending: false, error: null, callDraft: result.callDraft });
+            } else {
+              updateChat(sessionId, (current) => ({
+                ...finished,
+                messages: [...current.messages, { id: `assistant-${Date.now()}`, role: "assistant", text: result.reply, time: clock(), status: "complete", error: null }],
+              }));
+            }
+          } finally {
+            setCallingOffice(null);
+          }
+          return;
+        }
+
+        const turn = bookingTurn(trimmed, session.bookingStep, session.preferences, snapshot.profile);
+        const guidedBooking = session.bookingStep !== "idle" || turn.step !== "idle";
 
         if (guidedBooking) {
           const next = {
@@ -497,6 +678,7 @@ export function CareProvider({ user, initialData, children }: { user: CareUser; 
             title: nextTitle,
             bookingStep: turn.step,
             preferences: turn.preferences,
+            callDraft: { ...draft, reason: draft.reason || detectReason(trimmed) },
             error: null,
             updatedAt: new Date().toISOString(),
           };
@@ -596,25 +778,33 @@ export function CareProvider({ user, initialData, children }: { user: CareUser; 
         if (!appointment) return;
         commit((current) => ({ ...current, appointment }));
       },
-      async requestAppointment(shareSms) {
+      async requestAppointment(shareSms, callMode) {
         if (!snapshot.draft) return { ok: false, persisted: false, message: "Choose a time first." };
         const remember = (appointment: Appointment) => {
           commit((current) => ({
             ...current,
             appointment,
-            notices: [{ id: `booked-${appointment.reference}`, title: "Simulated request saved", body: `${appointment.provider} · ${appointment.longDate} at ${appointment.timeLabel}. Reference ${appointment.reference}. The office was not contacted.`, read: false }, ...current.notices],
+            notices: [{
+              id: `booked-${appointment.reference}`,
+              title: appointment.simulated ? "Simulated request saved" : "Appointment time requested",
+              body: appointment.simulated
+                ? `${appointment.provider} · ${appointment.longDate} at ${appointment.timeLabel}. Reference ${appointment.reference}. The office was not contacted.`
+                : `${appointment.provider} · ${appointment.longDate} at ${appointment.timeLabel}. Reference ${appointment.reference}. Waiting for office confirmation.`,
+              read: false,
+            }, ...current.notices],
           }));
           setAppointments((current) => [appointment, ...current.filter((item) => item.appointmentId !== appointment.appointmentId || appointment.appointmentId === null)]);
           setSavedCareRequest((current) => current ? { ...current, options: current.options.filter((option) => option.id !== snapshot.draft?.id) } : current);
         };
         if (initialData.mode === "fallback") {
+          if (callMode === "real") return sessionOnly("Real booking calls require the database connection.");
           const appointment: Appointment = { ...snapshot.draft, appointmentId: null, status: "simulated", simulated: true };
           remember(appointment);
-          return sessionOnly("Simulated request kept in this session. The office was not contacted.");
+          return sessionOnly("Fake booking call kept in this session. The office was not contacted.");
         }
         setSaving(true);
         try {
-          const result = await requestAppointmentAction({ optionId: snapshot.draft.id, shareSms });
+          const result = await requestAppointmentAction({ optionId: snapshot.draft.id, shareSms, callMode });
           if (result.appointment) remember(result.appointment);
           return result;
         } finally {
@@ -655,7 +845,7 @@ export function CareProvider({ user, initialData, children }: { user: CareUser; 
         return result;
       },
     };
-  }, [activeChat, appointments, chatSessions, initialData, policyId, preview, router, savedCareRequest, saving, snapshot, user]);
+  }, [activeChat, appointments, callingOffice, chatSessions, initialData, policyId, preview, router, savedCareRequest, saving, snapshot, user]);
 
   return <CareContext.Provider value={value}>
     {initialData.mode === "fallback" ? <div className={styles.dataBanner} role="status"><span>{initialData.message}</span><button onClick={() => router.refresh()} type="button">Retry database</button></div> : null}

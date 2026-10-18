@@ -14,7 +14,7 @@ export function ReviewView() {
   const router = useRouter();
   const [share, setShare] = useState(false);
   const [sms, setSms] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
+  const [submittingMode, setSubmittingMode] = useState<"real" | "fake" | null>(null);
   const [profileDirty, setProfileDirty] = useState(false);
   const [insuranceDirty, setInsuranceDirty] = useState(false);
   const [error, setError] = useState("");
@@ -29,8 +29,8 @@ export function ReviewView() {
   );
   const savedOption = care.savedCareRequest?.options.some((option) => option.id === slot?.id) ?? false;
 
-  async function confirm() {
-    if (!slot || submitting) return;
+  async function confirm(callMode: "real" | "fake") {
+    if (!slot || submittingMode) return;
     if (!nameReady) {
       setError("Add your name before requesting this visit.");
       return;
@@ -55,7 +55,7 @@ export function ReviewView() {
       setError("Choose a time from the saved shortlist.");
       return;
     }
-    setSubmitting(true);
+    setSubmittingMode(callMode);
     setError("");
     try {
       if (care.dataMode === "database" && profileDirty) {
@@ -72,14 +72,14 @@ export function ReviewView() {
           return;
         }
       }
-      const result = await care.requestAppointment(sms);
+      const result = await care.requestAppointment(sms, callMode);
       if (!result.ok) {
         setError(result.message);
         return;
       }
       router.push("/appointments/confirmed");
     } finally {
-      setSubmitting(false);
+      setSubmittingMode(null);
     }
   }
 
@@ -106,7 +106,7 @@ export function ReviewView() {
       </p>
       <header className={styles.pageIntro}>
         <h1>Review before we book</h1>
-        <p>Confirm your saved details before a simulated request is stored. The office is not contacted.</p>
+        <p>Confirm your saved details, then choose a real Vapi booking call or a fake demo call.</p>
       </header>
       <ol className={styles.stepperLeft}>
         <li className={styles.stepDone}>
@@ -329,10 +329,13 @@ export function ReviewView() {
           <p>{paymentTitle(care.profile.payment)}</p>
           <p>Estimated visit cost {slot.estimate}</p>
           <p>Network status unknown.</p>
-          <button className={styles.btnPrimaryWide} disabled={submitting || care.saving} onClick={confirm} type="button">
-            {submitting || care.saving ? "Saving request…" : "Confirm and request booking"}
+          <button className={styles.btnPrimaryWide} disabled={Boolean(submittingMode) || care.saving} onClick={() => confirm("real")} type="button">
+            {submittingMode === "real" ? "Calling office…" : "Confirm with real Vapi call"}
           </button>
-          <p className={styles.fine}>This stores a simulated request. The office is not contacted, and the visit is not booked.</p>
+          <button className={styles.btnOutlineWide} disabled={Boolean(submittingMode) || care.saving} onClick={() => confirm("fake")} type="button">
+            {submittingMode === "fake" ? "Running fake call…" : "Confirm with fake demo call"}
+          </button>
+          <p className={styles.fine}>The real option calls the displayed office number. The fake option never contacts the office. A request is not booked until the office confirms it.</p>
         </aside>
       </div>
 

@@ -31,6 +31,7 @@ export type Preferences = {
 
 export type Slot = {
   id: string;
+  locationId?: string;
   visitType: string;
   provider: string;
   dateLabel: string;
@@ -44,6 +45,7 @@ export type Slot = {
   estimate: string;
   distance: string;
   rating: string;
+  phone?: string;
   period: "morning" | "afternoon";
   startIso: string;
   endIso: string;
@@ -73,6 +75,29 @@ export type ChatMessage = {
 };
 
 export type ChatProvider = "openai" | "oci";
+
+export type CallWorkflow = "gathering" | "review" | "calling" | "completed" | "failed";
+
+export type ReturnedCallResult = {
+  availableTimes: Array<{ optionId: string; label: string; startIso: string | null; endIso: string | null }>;
+  estimatedCost: string | null;
+  insuranceResponse: string | null;
+  officeRequirements: string[];
+  followUpNotes: string | null;
+  summary: string;
+  savedForFollowUp: boolean;
+};
+
+export type CallDraft = {
+  workflow: CallWorkflow;
+  reason: string;
+  officeName: string;
+  officePhone: string;
+  locationId: string;
+  resultText: string;
+  declineCount: number;
+  result: ReturnedCallResult | null;
+};
 
 export type ChatContextItem = {
   id: string;
@@ -104,6 +129,7 @@ export type ChatSession = {
   provider: ChatProvider;
   pending: boolean;
   error: string | null;
+  callDraft: CallDraft;
   stored: boolean;
   messagesLoaded: boolean;
   messageCount: number;
@@ -281,6 +307,7 @@ export function chatFromSnapshot(snapshot: CareSnapshot, id = "chat-initial"): C
     provider: "oci",
     pending: false,
     error: null,
+    callDraft: { workflow: "gathering", reason: "", officeName: "", officePhone: "", locationId: "", resultText: "", declineCount: 0, result: null },
     stored: false,
     messagesLoaded: true,
     messageCount: snapshot.messages.length,
@@ -305,6 +332,7 @@ export function emptyChatSession(profile: Profile, id: string): ChatSession {
     provider: "oci",
     pending: false,
     error: null,
+    callDraft: { workflow: "gathering", reason: "", officeName: "", officePhone: "", locationId: "", resultText: "", declineCount: 0, result: null },
     stored: false,
     messagesLoaded: true,
     messageCount: 0,
@@ -744,7 +772,7 @@ export function bookingTurn(
     payment: !fresh && !restart && step === "ready",
   };
   const visitType = detectedVisit ?? (passed.visit ? preferences.visitType : "");
-  const zip = detectedZip ?? (passed.location ? profile.zip : "");
+  const zip = detectedZip ?? profile.zip;
   const preferredTimes = detectedTime ?? (passed.time ? preferences.preferredTimes : "");
   const nextPreferences: Preferences = {
     ...preferences,
@@ -792,7 +820,7 @@ function bookingReply(step: BookingStep, preferences: Preferences, zip: string, 
   const visit = visitTypeLabel(preferences.visitType).toLowerCase();
   if (step === "visit") return "What kind of visit do you want?";
   if (step === "location") return `I can book ${visitPhrase(preferences.visitType)}. Which ZIP should I search near?`;
-  if (step === "time") return `I’ll look near ${zip || "your ZIP"}. What time of day works best?`;
+  if (step === "time") return `I’ll use your ZIP code, ${zip}, and search within 5 miles. What time of day works best?`;
   if (step === "payment") return `${preferences.preferredTimes}. How do you want to pay?`;
   return `I can look for ${visit} options ${preferences.location.toLowerCase()}, ${preferences.preferredTimes.toLowerCase()}, ${paymentTitle(payment).toLowerCase()}. I can show options when you’re ready.`;
 }
@@ -800,7 +828,7 @@ function bookingReply(step: BookingStep, preferences: Preferences, zip: string, 
 function bookingNudge(step: BookingStep) {
   if (step === "visit") return "Choose a dental visit, eye exam, annual physical, or other visit.";
   if (step === "location") return "Send a 5-digit ZIP, or use the one on your profile.";
-  if (step === "time") return "Choose weekday mornings, weekday afternoons, or flexible.";
+  if (step === "time") return "Tell me the days and times that work, or choose one of the suggestions below.";
   if (step === "payment") return "Choose insurance, self-pay, or decide later.";
   return "I can show options when you’re ready.";
 }
@@ -821,10 +849,13 @@ function detectVisit(text: string) {
 }
 
 function detectTime(text: string) {
-  const lower = text.toLowerCase();
-  if (lower.includes("afternoon")) return "Weekday afternoons";
-  if (lower.includes("morning")) return "Weekday mornings";
-  if (lower.includes("flexible")) return "Flexible";
+  const trimmed = text.trim().replace(/[.!?]+$/, "");
+  const lower = trimmed.toLowerCase();
+  if (lower.includes("flexible") || lower.includes("any time") || lower.includes("anytime")) return "Flexible";
+  const availability = /\b(?:mon(?:day)?s?|tue(?:sday)?s?|wed(?:nesday)?s?|thu(?:rsday)?s?|fri(?:day)?s?|sat(?:urday)?s?|sun(?:day)?s?|weekdays?|weekends?|mornings?|afternoons?|evenings?|nights?|noon|after\s+\d{1,2}|before\s+\d{1,2}|\d{1,2}(?::\d{2})?\s*(?:am|pm))\b/i;
+  if (trimmed.length <= 120 && availability.test(trimmed)) {
+    return `${trimmed.charAt(0).toUpperCase()}${trimmed.slice(1)}`;
+  }
   return null;
 }
 

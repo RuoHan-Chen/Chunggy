@@ -17,6 +17,7 @@ import {
 import styles from "./admin.module.css";
 
 const routes = [
+  ["/home", "Home"],
   ["/onboarding", "Onboarding"],
   ["/assistant", "Assistant"],
   ["/appointments/results", "Results"],
@@ -35,10 +36,17 @@ export function DemoPanel({ email, name }: { email: string; name: string }) {
 
   return (
     <section className={styles.section}>
-      <h2>This browser</h2>
+      <h2>Demo controls</h2>
       <p className={styles.lede}>
         Reset and seed change only the Assurance preview stored in this browser. They do not write Oracle rows.
       </p>
+      <ol className={styles.demoFlow}>
+        <li>Complete onboarding and open the assistant.</li>
+        <li>Gather appointment details and select an Oracle office.</li>
+        <li>Review the exact allowlisted number, then confirm the Vapi call.</li>
+        <li>Review returned times, cost, insurance response, and office requirements.</li>
+        <li>Select a returned time or save the request for follow-up.</li>
+      </ol>
       {preview ? (
         <ul className={styles.facts}>
           <li>Booking step: {preview.bookingStep}</li>

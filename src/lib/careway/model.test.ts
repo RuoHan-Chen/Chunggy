@@ -5,6 +5,7 @@ import {
   chatFollowUpError,
   defaultPreferences,
   defaultProfile,
+  emptyProfile,
   type BookingStep,
 } from "./model";
 
@@ -37,7 +38,7 @@ describe("bookingTurn", () => {
     expect(profile).toMatchObject({ zip: "60614", payment: "insurance" });
   });
 
-  it("restarts location collection when the visit type changes", () => {
+  it("reuses the profile ZIP when the visit type changes", () => {
     const turn = bookingTurn(
       "dental",
       "ready",
@@ -45,16 +46,36 @@ describe("bookingTurn", () => {
       defaultProfile(),
     );
 
-    expect(turn.step).toBe("location");
+    expect(turn.step).toBe("time");
     expect(turn.preferences.visitType).toBe("dental");
-    expect(turn.reply).toContain("Which ZIP");
+    expect(turn.reply).toContain("your ZIP code, 60614");
   });
 
   it("accepts the professional visit labels", () => {
     const turn = bookingTurn("Other visit", "visit", defaultPreferences(), defaultProfile());
 
     expect(turn.preferences.visitType).toBe("other");
+    expect(turn.step).toBe("time");
+  });
+
+  it("asks for a ZIP only when the profile does not have one", () => {
+    const turn = bookingTurn("Find me a dentist", "idle", defaultPreferences(), emptyProfile());
+
     expect(turn.step).toBe("location");
+    expect(turn.reply).toContain("Which ZIP");
+  });
+
+  it("accepts conversational availability such as Monday nights", () => {
+    const turn = bookingTurn(
+      "monday nights",
+      "time",
+      { ...defaultPreferences(), preferredTimes: "" },
+      defaultProfile(),
+    );
+
+    expect(turn.step).toBe("payment");
+    expect(turn.preferences.preferredTimes).toBe("Monday nights");
+    expect(turn.reply).toContain("Monday nights");
   });
 
   it("keeps non-booking questions outside the booking workflow", () => {

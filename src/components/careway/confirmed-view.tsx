@@ -38,7 +38,14 @@ export function ConfirmedView() {
 
   const cancelled = appointment.status === "cancelled";
   const officeConfirmed = appointment.status === "confirmed" && appointment.simulated === false;
-  const statusLabel = cancelled ? "Cancelled" : officeConfirmed ? "Confirmed by office" : "Simulated request";
+  const realRequest = appointment.simulated === false;
+  const statusLabel = cancelled
+    ? "Cancelled"
+    : officeConfirmed
+      ? "Confirmed by office"
+      : realRequest
+        ? "Requested from office"
+        : "Simulated request";
 
   function downloadCalendar() {
     const file = new Blob([toIcs(appointment!, care.profile.fullName || name)], {
@@ -65,7 +72,9 @@ export function ConfirmedView() {
               ? "This request is cancelled. The office was not contacted."
               : officeConfirmed
                 ? "The office confirmed this visit."
-                : `This is a simulated request${appointment.appointmentId ? " stored in Oracle" : " for this session only"}. No office was contacted, and insurance eligibility was not checked.`}
+                : realRequest
+                  ? "The Vapi booking call finished and the request was saved. The visit is not booked until the office confirms it."
+                  : `This is a simulated request${appointment.appointmentId ? " stored in Oracle" : " for this session only"}. No office was contacted, and insurance eligibility was not checked.`}
           </p>
         </div>
       </header>

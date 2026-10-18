@@ -83,8 +83,8 @@ export function getIntegrationStatus() {
     ]),
     vapi: isConfigured([
       "VAPI_PRIVATE_API_KEY",
-      "VAPI_ASSISTANT_ID",
-      "VAPI_INSURANCE_OUTPUT_ID",
+      "VAPI_DOCTOR_ASSISTANT_ID",
+      "VAPI_PHONE_NUMBER_ID",
     ]),
   };
 }

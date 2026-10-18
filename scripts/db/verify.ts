@@ -41,10 +41,22 @@ async function main() {
         [],
         { outFormat: oracledb.OUT_FORMAT_OBJECT },
       );
+      const blockedDemoNumbers = await connection.execute<{ count: number }>(
+        `SELECT COUNT(*) AS "count"
+         FROM PROVIDER_LOCATIONS
+         WHERE IS_ACTIVE = 1
+           AND (
+             PHONE_E164 IS NULL OR
+             PHONE_E164 NOT IN ('+19172082802', '+18327578013')
+           )`,
+        [],
+        { outFormat: oracledb.OUT_FORMAT_OBJECT },
+      );
 
       return {
         tables: tables.rows?.map((row) => row.tableName) ?? [],
         providerCount: providers.rows?.[0]?.count ?? 0,
+        blockedDemoNumberCount: blockedDemoNumbers.rows?.[0]?.count ?? 0,
       };
     });
 
@@ -56,6 +68,9 @@ async function main() {
     }
     if (verification.providerCount < 1) {
       throw new Error("No active provider seed data found");
+    }
+    if (verification.blockedDemoNumberCount > 0) {
+      throw new Error(`${verification.blockedDemoNumberCount} active providers have a phone number outside the demo allowlist`);
     }
 
     console.log(
