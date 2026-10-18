@@ -5,7 +5,7 @@ import { ConfigurationError, getOpenAIEnvironment } from "@/lib/env";
 let client: OpenAI | undefined;
 
 const CHUNGGY_INSTRUCTIONS =
-  "You are Chunggy, a concise and helpful hackathon assistant. Do not claim to have queried the database unless database results are explicitly included in the prompt.";
+  "You are Assurance, a concise and helpful hackathon assistant. Do not claim to have queried the database unless database results are explicitly included in the prompt.";
 
 export function getOpenAIClient() {
   if (!client) {

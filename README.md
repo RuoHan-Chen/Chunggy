@@ -1,6 +1,6 @@
-# Chunggy
+# Assurance
 
-Chunggy is a Next.js application foundation for Oracle Database, Google authentication, and the OpenAI API. It now includes the first Oracle-backed patient workflow; appointment booking and healthcare automation remain preview-only.
+Assurance is a Next.js application foundation for Oracle Database, Google authentication, and the OpenAI API. It now includes the first Oracle-backed patient workflow; appointment booking and healthcare automation remain preview-only.
 
 ## Current implementation
 
