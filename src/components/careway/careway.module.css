@@ -1687,6 +1687,12 @@
   color: #41556f;
 }
 
+.callAction {
+  display: grid;
+  gap: 10px;
+  margin: 20px 0;
+}
+
 .vapiOutput {
   max-height: 320px;
   overflow: auto;
