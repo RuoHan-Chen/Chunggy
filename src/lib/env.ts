@@ -81,10 +81,11 @@ export function getIntegrationStatus() {
       "OCI_GENAI_COMPARTMENT_ID",
       "OCI_GENAI_MODEL_ID",
     ]),
-    vapi: isConfigured([
-      "VAPI_PRIVATE_API_KEY",
-      "VAPI_DOCTOR_ASSISTANT_ID",
-      "VAPI_PHONE_NUMBER_ID",
-    ]),
+    vapi:
+      isConfigured(["VAPI_PRIVATE_API_KEY", "VAPI_PHONE_NUMBER_ID"]) &&
+      Boolean(
+        process.env.VAPI_DOCTOR_ASSISTANT_ID?.trim() ||
+        process.env.VAPI_APPOINTMENT_ASSISTANT_ID?.trim(),
+      ),
   };
 }

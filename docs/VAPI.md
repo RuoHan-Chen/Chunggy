@@ -8,6 +8,8 @@ Set these server-side values in `.env.local`:
 VAPI_PRIVATE_API_KEY=
 VAPI_PHONE_NUMBER_ID=
 VAPI_DOCTOR_ASSISTANT_ID=
+# Alternatively:
+# VAPI_APPOINTMENT_ASSISTANT_ID=
 # Optional:
 VAPI_DOCTOR_OUTPUT_ID=
 VAPI_WEBHOOK_SECRET=
@@ -16,6 +18,8 @@ VAPI_WEBHOOK_SECRET=
 Import an outbound-capable phone number in Vapi and use its ID for
 `VAPI_PHONE_NUMBER_ID`. Free Vapi numbers cannot make outbound calls. Keep the
 private key and webhook secret out of browser variables and source control.
+The app accepts `VAPI_APPOINTMENT_ASSISTANT_ID` as an alias for
+`VAPI_DOCTOR_ASSISTANT_ID`.
 
 ## Doctor assistant
 

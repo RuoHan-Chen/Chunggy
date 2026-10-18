@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRef, useState } from "react";
+import { useState } from "react";
 
 import {
   IconCalendar,
@@ -19,10 +19,6 @@ export function ConfirmedView() {
   const care = useCare();
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelError, setCancelError] = useState("");
-  const [callStarting, setCallStarting] = useState(false);
-  const [callResult, setCallResult] = useState<{ callId: string; status: string } | null>(null);
-  const [callError, setCallError] = useState("");
-  const callStartedRef = useRef(false);
   const appointment = care.appointment;
   const name = firstName(care.profile.fullName || care.user.name);
 
@@ -61,27 +57,6 @@ export function ConfirmedView() {
     link.download = `${appointment!.reference}.ics`;
     link.click();
     URL.revokeObjectURL(url);
-  }
-
-  async function startAppointmentCall() {
-    if (callStartedRef.current) return;
-    callStartedRef.current = true;
-    setCallStarting(true);
-    setCallError("");
-    try {
-      const response = await fetch("/api/vapi/call", { method: "POST" });
-      const result = await response.json();
-      if (!response.ok) {
-        const missing = Array.isArray(result.missing) ? ` Missing: ${result.missing.join(", ")}.` : "";
-        throw new Error(`${typeof result.error === "string" ? result.error : "Call request failed."}${missing}`);
-      }
-      setCallResult({ callId: result.callId, status: result.status });
-    } catch (error) {
-      callStartedRef.current = false;
-      setCallError(error instanceof Error ? error.message : "Could not start the appointment call.");
-    } finally {
-      setCallStarting(false);
-    }
   }
 
   return (
@@ -153,25 +128,6 @@ export function ConfirmedView() {
 
         <section className={styles.card}>
           <h2>Next steps</h2>
-          {!cancelled ? (
-            <div className={styles.callAction}>
-              <button
-                className={styles.btnPrimaryWide}
-                disabled={callStarting || Boolean(callResult)}
-                onClick={startAppointmentCall}
-                type="button"
-              >
-                {callStarting ? "Starting call…" : callResult ? "Call started" : "Start Appointment Call"}
-              </button>
-              <p className={styles.fine}>This calls the preconfigured test number. It does not use the office number shown above.</p>
-              {callError ? <p className={styles.formError} role="alert">{callError}</p> : null}
-              {callResult ? (
-                <p className={styles.saved} role="status">
-                  Call {callResult.status}. Reference ID: {callResult.callId}
-                </p>
-              ) : null}
-            </div>
-          ) : null}
           <div className={styles.sideItem}>
             <span className={styles.iconBubble}>
               <IconId />
