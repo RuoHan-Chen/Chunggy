@@ -109,9 +109,6 @@ export function AssistantView() {
                     </button>
                   )}
                   <div className={styles.chatSessionActions}>
-                    {!active && session.messages.length > 0 ? (
-                      <button onClick={() => care.importChatContext(session.id)} type="button">Add context</button>
-                    ) : null}
                     <button onClick={() => beginRename(session.id, session.title)} type="button">Rename</button>
                     <button onClick={() => removeChat(session.id, session.title)} type="button">Delete</button>
                   </div>
