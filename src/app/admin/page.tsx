@@ -32,7 +32,7 @@ async function AdminScreen() {
   if (!session?.user) redirect("/login");
 
   const email = session.user.email || "";
-  const name = session.user.name || "Chunggy member";
+  const name = session.user.name || "Assurance member";
   const status = getIntegrationStatus();
   let database: Awaited<ReturnType<typeof getDatabaseOverview>> | null = null;
   let tables: FoundationTablePreview[] | null = null;
@@ -59,7 +59,7 @@ async function AdminScreen() {
     <div className={styles.frame}>
       <header className={styles.header}>
         <div>
-          <p className={styles.wordmark}>Chunggy</p>
+          <p className={styles.wordmark}>Assurance</p>
           <p className={styles.lede}>Admin</p>
         </div>
         <div className={styles.account}>

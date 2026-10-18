@@ -36,7 +36,7 @@ export function DemoPanel({ email, name }: { email: string; name: string }) {
     <section className={styles.section}>
       <h2>This browser</h2>
       <p className={styles.lede}>
-        Reset and seed change only the Chunggy preview stored in this browser. They do not write Oracle rows.
+        Reset and seed change only the Assurance preview stored in this browser. They do not write Oracle rows.
       </p>
       {preview ? (
         <ul className={styles.facts}>
