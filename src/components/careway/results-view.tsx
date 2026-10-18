@@ -5,13 +5,15 @@ import { useRouter } from "next/navigation";
 
 import { IconPin, IconTooth } from "@/components/careway/icons";
 import { useCare } from "@/components/careway/provider";
-import { slotsFor, type Slot } from "@/lib/careway/model";
+import type { Slot } from "@/lib/careway/model";
 import styles from "@/components/careway/careway.module.css";
 
 export function ResultsView() {
   const care = useCare();
   const router = useRouter();
-  const slots = slotsFor(care.preferences.visitType, care.preferences.preferredTimes);
+  const slots = care.providerSlots.filter(
+    (slot) => slot.visitType === care.preferences.visitType,
+  );
 
   function choose(slot: Slot) {
     care.selectSlot(slot);
@@ -33,6 +35,12 @@ export function ResultsView() {
         </p>
       </header>
       <div className={styles.stackWide}>
+        {slots.length === 0 ? (
+          <section className={styles.card}>
+            <h2>No provider listings yet</h2>
+            <p>Oracle does not currently have an active {care.preferences.visitType} provider.</p>
+          </section>
+        ) : null}
         {slots.map((slot) => {
           const matches =
             care.preferences.preferredTimes === "Flexible" ||

@@ -6,6 +6,7 @@ import { auth } from "@/auth";
 import { CareProvider } from "@/components/careway/provider";
 import { AppShell } from "@/components/careway/shell";
 import styles from "@/components/careway/careway.module.css";
+import { loadCareBootstrap } from "@/server/care-data";
 
 export function Authed({
   children,
@@ -43,9 +44,10 @@ async function AuthedGate({
     email: session.user.email || "",
     image: session.user.image ?? null,
   };
+  const initialData = await loadCareBootstrap(session);
 
   return (
-    <CareProvider user={user}>
+    <CareProvider initialData={initialData} user={user}>
       {withShell ? <AppShell>{children}</AppShell> : children}
     </CareProvider>
   );

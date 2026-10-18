@@ -1,6 +1,6 @@
 # Chunggy
 
-Chunggy is a Next.js application foundation for Oracle Database, Google authentication, and the OpenAI API. This branch contains server setup only; product and healthcare workflow logic are intentionally out of scope.
+Chunggy is a Next.js application foundation for Oracle Database, Google authentication, and the OpenAI API. It now includes the first Oracle-backed patient workflow; appointment booking and healthcare automation remain preview-only.
 
 ## Current implementation
 
@@ -19,10 +19,13 @@ Chunggy is a Next.js application foundation for Oracle Database, Google authenti
 - [x] Phase 0 user, profile, insurance, appointment-type, and provider schema
 - [x] Seeded provider catalog and database verification command
 - [x] Server-only repositories with runtime input validation
+- [x] Oracle-backed signed-in users, patient profiles, and manually entered insurance
+- [x] Oracle provider listings with an explicit development fallback when disconnected
+- [x] Profile save/remove status and retry UI (no browser persistence for database-backed fields)
 - [x] Vitest unit tests and Playwright API smoke-test setup
 - [ ] Google OAuth sign-in verification
 - [ ] OpenAI API key and live request verification
-- [ ] Oracle-backed user and conversation persistence
+- [ ] Oracle-backed conversation persistence
 - [ ] Authenticated chat endpoint and interface
 
 ## Run locally
@@ -110,9 +113,8 @@ npm run test:e2e
 
 1. Complete a Google sign-in and verify the authenticated dashboard.
 2. Create a least-privilege Oracle application user for deployment.
-3. Connect Google identities to `APP_USERS` and persist onboarding data.
-4. Add `CONVERSATIONS` and `MESSAGES` migrations.
-5. Save and retrieve per-user conversation history.
+3. Add `CONVERSATIONS` and `MESSAGES` migrations after the frontend-only chat-session phase.
+4. Save and retrieve per-user conversation history.
 
 ## References
 
